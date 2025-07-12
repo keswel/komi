@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 
 struct Bullet {
     Vector2 position;
@@ -38,26 +39,87 @@ int main() {
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
 
-        // player movement 
-        if (IsKeyDown(KEY_W) && circleY - playerRadius > 0)                 { circleY -= playerSpeed * dt; direction = "up";    }
-        else if (IsKeyDown(KEY_S) && circleY + playerRadius < screenHeight) { circleY += playerSpeed * dt; direction = "down";  }
-        else if (IsKeyDown(KEY_A) && circleX - playerRadius > 0)            { circleX -= playerSpeed * dt; direction = "left";  }
-        else if (IsKeyDown(KEY_D) && circleX + playerRadius < screenWidth)  { circleX += playerSpeed * dt; direction = "right"; }
+        float dx = 0, dy = 0;
 
-        // spawn bullets / enemies 
+        if (IsKeyDown(KEY_W) && circleY - playerRadius > 0) dy = -1;
+        if (IsKeyDown(KEY_S) && circleY + playerRadius < screenHeight) dy =  1;
+        if (IsKeyDown(KEY_A) && circleX - playerRadius > 0) dx = -1;
+        if (IsKeyDown(KEY_D) && circleX + playerRadius < screenWidth) dx =  1;
+
+        // update facing direction once, on press
+        if (IsKeyDown(KEY_W) && IsKeyDown(KEY_D)) {
+            direction = "top right";
+        }
+        else if (IsKeyDown(KEY_W) && IsKeyDown(KEY_A)) {
+            direction = "top left";
+        }
+        else if (IsKeyDown(KEY_S) && IsKeyDown(KEY_D)) {
+            direction = "bottom right";
+        }
+        else if (IsKeyDown(KEY_S) && IsKeyDown(KEY_A)) {
+            direction = "bottom left";
+        }
+        else if (IsKeyPressed(KEY_W)) {
+            direction = "up";
+        }
+        else if (IsKeyPressed(KEY_S)) {
+            direction = "down";
+        }
+        else if (IsKeyPressed(KEY_A)) {
+            direction = "left";
+        }
+        else if (IsKeyPressed(KEY_D)) {
+            direction = "right";
+        }
+        
+        // update player position.
+        float len = std::sqrt(dx*dx + dy*dy);
+        if (len > 0.0f) { 
+          dx /= len;  
+          dy /= len; 
+        }
+        circleX += dx * playerSpeed * dt;
+        circleY += dy * playerSpeed * dt;
+        
+        // shoot
         if (IsKeyPressed(KEY_SPACE)) {
             bullets.push_back({ {circleX, circleY}, 600.0f, direction });
         }
+        // spawn enemy (temporary)
         if (IsKeyPressed(KEY_V)) {
             enemies.push_back({ {circleX, circleY}, 10.0f });
         }
 
         // update bullets 
         for (auto& b : bullets) {
-            if      (b.direction == "up")    b.position.y -= b.speed * dt;
-            else if (b.direction == "down")  b.position.y += b.speed * dt;
-            else if (b.direction == "left")  b.position.x -= b.speed * dt;
-            else if (b.direction == "right") b.position.x += b.speed * dt;
+            if (b.direction == "top right") {
+                b.position.x += b.speed * dt;  // move right (x increasing)
+                b.position.y -= b.speed * dt;  // move up (y decreasing)
+            }
+            else if (b.direction == "top left") {
+                b.position.x -= b.speed * dt;  // move left
+                b.position.y -= b.speed * dt;  // move up
+            }
+            else if (b.direction == "bottom right") {
+                b.position.x += b.speed * dt;  // move right
+                b.position.y += b.speed * dt;  // move down
+            }
+            else if (b.direction == "bottom left") {
+                b.position.x -= b.speed * dt;  // move left
+                b.position.y += b.speed * dt;  // move down
+            }
+            else if (b.direction == "up") {
+                b.position.y -= b.speed * dt;
+            }
+            else if (b.direction == "down") {
+                b.position.y += b.speed * dt;
+            }
+            else if (b.direction == "left") {
+                b.position.x -= b.speed * dt;
+            }
+            else if (b.direction == "right") {
+                b.position.x += b.speed * dt;
+            }
         }
 
         // handle collisions 
@@ -97,7 +159,7 @@ int main() {
         std::string scoreboard = std::to_string(player_score) + " | " + std::to_string(enemy_score);
         const char* scoreboard_text = scoreboard.c_str();
         int textWidth = MeasureText(scoreboard_text, 20);
-        int rectWidth = textWidth + 40;  // Add some padding
+        int rectWidth = textWidth + 40;  // padding
         int rectHeight = 40;
         int rectX = (screenWidth - rectWidth) / 2;
         int rectY = 10;
