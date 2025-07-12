@@ -1,55 +1,68 @@
 #include <boost/asio.hpp>
 #include <iostream>
+#include <thread>
 
 using boost::asio::ip::tcp;
+
+void session(tcp::socket socket, int client_id) {
+    try {
+        std::cout << "Client " << client_id << " session started\n";
+        boost::asio::streambuf buf;
+        boost::system::error_code error;
+
+        while (true) {
+            size_t len = boost::asio::read_until(socket, buf, "\n", error);
+            if (error) {
+                if (error == boost::asio::error::eof) {
+                    std::cout << "Client " << client_id << " disconnected\n";
+                } else {
+                    std::cerr << "Error on client " << client_id << ": " << error.message() << std::endl;
+                }
+                break;
+            }
+
+            std::istream is(&buf);
+            std::string line;
+            std::getline(is, line);
+
+            std::cout << "Received from client " << client_id << ": " << line << std::endl;
+
+            std::string reply = "Message received\n";
+            boost::asio::write(socket, boost::asio::buffer(reply));
+        }
+    } catch (std::exception& e) {
+        std::cerr << "Exception in client " << client_id << " session: " << e.what() << std::endl;
+    }
+}
 
 int main() {
     try {
         boost::asio::io_context io_context;
-        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 8080));
 
-        std::cout << "Server is listening on port 8080...\n";
+        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 8080));
+        std::cout << "Server listening on port 8080...\n";
+
+        int next_client_id = 0;
 
         while (true) {
             tcp::socket socket(io_context);
             acceptor.accept(socket);
-            std::cout << "Client connected.\n";
 
-            try {
-                // send greeting once
-                std::string greeting = "Hello from server\n";
-                boost::asio::write(socket, boost::asio::buffer(greeting));
+            next_client_id++;
+            int client_id = next_client_id;
 
-                char data[1024];
+            auto remote_ep = socket.remote_endpoint();
+            std::cout << "Client " << client_id << " connected from "
+                      << remote_ep.address().to_string() << ":"
+                      << remote_ep.port() << std::endl;
 
-                // read messages until client disconnects
-                while (true) {
-                    boost::system::error_code error;
-                    size_t length = socket.read_some(boost::asio::buffer(data), error);
-
-                    if (error == boost::asio::error::eof) {
-                        // connection closed cleanly by peer
-                        std::cout << "Client disconnected.\n";
-                        break;
-                    } else if (error) {
-                        throw boost::system::system_error(error);
-                    }
-
-                    std::string client_message(data, length);
-                    std::cout << "Received from client: " << client_message << std::endl;
-
-                    // send a response back:
-                    std::string response = "Message received\n";
-                    boost::asio::write(socket, boost::asio::buffer(response));
-                }
-            }
-            catch (std::exception& e) {
-                std::cerr << "Communication error: " << e.what() << std::endl;
-            }
+            // launch a thread for this client session
+            std::thread(session, std::move(socket), client_id).detach();
         }
+
+    } catch (std::exception& e) {
+        std::cerr << "Server error: " << e.what() << std::endl;
     }
-    catch (std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-    }
+
     return 0;
 }

@@ -6,6 +6,7 @@
 #include <boost/asio.hpp>
 
 using boost::asio::ip::tcp;
+tcp::socket* global_socket = nullptr;
 
 struct Bullet {
     Vector2 position;
@@ -20,6 +21,21 @@ struct Enemy {
     static constexpr float RADIUS = 15.0f;        
 };
 
+void send_to_server(const std::string& msg) {
+    try {
+        if (global_socket && global_socket->is_open()) {
+            boost::asio::write(*global_socket, boost::asio::buffer(msg));
+        } else {
+            std::cerr << "Socket is not connected!" << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "send_to_server failed: " << e.what() << '\n';
+    }
+}
+void send_player_position(float circleX, float circleY) {
+    std::string msg = "Position: " + std::to_string(circleX) + ", " + std::to_string(circleY) + "\n";
+    send_to_server(msg);
+}
 
 int main() {
     boost::asio::io_context io_context;
@@ -30,7 +46,7 @@ int main() {
     try {
         boost::asio::connect(socket, endpoints);
 
-        // read greeting
+        // optionally read greeting
         std::string reply(64, '\0');
         size_t n = socket.read_some(boost::asio::buffer(reply));
         reply.resize(n);
@@ -40,15 +56,6 @@ int main() {
         std::cerr << "Connection failed: " << e.what() << std::endl;
     }
 
-    // helper function to easily send data to server.
-    auto send_to_server = [&](std::string_view msg) {
-        try {
-            boost::asio::write(socket, boost::asio::buffer(msg));
-        } catch (const std::exception& e) {
-            std::cerr << "send_to_server failed: " << e.what() << '\n';
-        }
-    };
-                                             
     const int screenWidth  = 800;
     const int screenHeight = 450;
 
@@ -129,6 +136,7 @@ int main() {
         }
         circleX += dx * playerSpeed * dt;
         circleY += dy * playerSpeed * dt;
+        send_player_position(circleX, circleY);
         
         // shoot
         if (IsKeyPressed(KEY_SPACE)) {
