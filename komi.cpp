@@ -22,6 +22,9 @@ int main() {
 
     InitWindow(screenWidth, screenHeight, "komi");
     SetTargetFPS(240);
+  
+    int player_score = 0;
+    int enemy_score = 0;
 
     float circleX = screenWidth  / 2.0f;
     float circleY = screenHeight / 2.0f;
@@ -73,6 +76,7 @@ int main() {
                     eIt = enemies.erase(eIt);     // kill enemy
                     bIt = bullets.erase(bIt);     // kill bullet
                     removedBullet = true;
+                    player_score++;
                     break;                        // bullet is gone; break inner loop
                 } else {
                     ++eIt;
@@ -89,7 +93,18 @@ int main() {
                        b.position.y < 0 || b.position.y > screenHeight;
             }), bullets.end());
 
-        // draw
+        // draw scoreboard
+        std::string scoreboard = std::to_string(player_score) + " | " + std::to_string(enemy_score);
+        const char* scoreboard_text = scoreboard.c_str();
+        int textWidth = MeasureText(scoreboard_text, 20);
+        int rectWidth = textWidth + 40;  // Add some padding
+        int rectHeight = 40;
+        int rectX = (screenWidth - rectWidth) / 2;
+        int rectY = 10;
+        
+  
+        DrawRectangle(rectX, rectY, rectWidth, rectHeight, DARKGRAY);
+        DrawText(scoreboard_text, rectX + 20, rectY + 10, 20, RAYWHITE);
         BeginDrawing();
         ClearBackground(BLACK);
 
