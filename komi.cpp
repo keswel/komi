@@ -3,6 +3,9 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <boost/asio.hpp>
+
+using boost::asio::ip::tcp;
 
 struct Bullet {
     Vector2 position;
@@ -18,6 +21,29 @@ struct Enemy {
 };
 
 int main() {
+    // establish connection with server
+    try {
+        boost::asio::io_context io_context;
+
+        // Resolve “localhost” and port 8080 → list of endpoints
+        tcp::resolver resolver(io_context);
+        auto endpoints = resolver.resolve("127.0.0.1", "8080");
+
+        // Create the socket and connect
+        tcp::socket socket(io_context);
+        boost::asio::connect(socket, endpoints);
+
+        // Read the server’s message into a buffer
+        std::string reply;
+        reply.resize(64);                     // small buffer; adjust as needed
+        size_t n = socket.read_some(boost::asio::buffer(reply));
+
+        reply.resize(n);                      // trim unused bytes
+        std::cout << "Server says: " << reply << std::endl;
+
+    } catch (std::exception& e) {
+        std::cerr << "Client error: " << e.what() << std::endl;
+    }
     const int screenWidth  = 800;
     const int screenHeight = 450;
 
