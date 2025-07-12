@@ -7,106 +7,99 @@ struct Bullet {
     Vector2 position;
     float speed = 600.0f;
     std::string direction;
+    static constexpr float RADIUS = 5.0f;         
 };
 
 struct Enemy {
-  Vector2 position;
-  float speed = 10.0f;
+    Vector2 position;
+    float speed = 10.0f;
+    static constexpr float RADIUS = 15.0f;        
 };
 
 int main() {
-    const int screenWidth = 800;
+    const int screenWidth  = 800;
     const int screenHeight = 450;
 
     InitWindow(screenWidth, screenHeight, "komi");
     SetTargetFPS(240);
 
-    int circleDiameter = 15;
-    float circleX = screenWidth / 2.0f;
+    float circleX = screenWidth  / 2.0f;
     float circleY = screenHeight / 2.0f;
-    float speed = 400.0f;
+    const float playerRadius = 15.0f;             // matches circleDiameter
+    const float playerSpeed  = 400.0f;
 
     std::vector<Bullet> bullets;
-    std::vector<Enemy> enemies;
-    std::string direction;
+    std::vector<Enemy>  enemies;
+    std::string direction = "up";                 // default so first shot has a dir
 
     while (!WindowShouldClose()) {
-        float deltaTime = GetFrameTime();
+        float dt = GetFrameTime();
 
-        // Player movement
-        if (IsKeyDown(KEY_W) && (circleY - circleDiameter > 0)) {
-            circleY -= speed * deltaTime;
-            direction = "up";
-        }
-        else if (IsKeyDown(KEY_S) && (circleY + circleDiameter < screenHeight)) {
-            circleY += speed * deltaTime;
-            direction = "down";
-        }
-        else if (IsKeyDown(KEY_A) && (circleX - circleDiameter > 0)) {
-            circleX -= speed * deltaTime;
-            direction = "left";
-        }
-        else if (IsKeyDown(KEY_D) && (circleX + circleDiameter < screenWidth)) {
-            circleX += speed * deltaTime;
-            direction = "right";
-        }
+        // player movement 
+        if (IsKeyDown(KEY_W) && circleY - playerRadius > 0)                 { circleY -= playerSpeed * dt; direction = "up";    }
+        else if (IsKeyDown(KEY_S) && circleY + playerRadius < screenHeight) { circleY += playerSpeed * dt; direction = "down";  }
+        else if (IsKeyDown(KEY_A) && circleX - playerRadius > 0)            { circleX -= playerSpeed * dt; direction = "left";  }
+        else if (IsKeyDown(KEY_D) && circleX + playerRadius < screenWidth)  { circleX += playerSpeed * dt; direction = "right"; }
 
-        std::cout << direction << std::endl;
-        // Shoot a bullet
+        // spawn bullets / enemies 
         if (IsKeyPressed(KEY_SPACE)) {
-            Bullet newBullet;
-            newBullet.position = { circleX, circleY };
-            newBullet.direction = direction; // store bullet direction
-            bullets.push_back(newBullet);
+            bullets.push_back({ {circleX, circleY}, 600.0f, direction });
         }
-
         if (IsKeyPressed(KEY_V)) {
-          Enemy newEnemy;
-          newEnemy.position = {circleX, circleY};
-          enemies.push_back(newEnemy);
+            enemies.push_back({ {circleX, circleY}, 10.0f });
         }
 
-        // Update bullet positions
-        for (auto& bullet : bullets) {
-            if (bullet.direction == "up") {
-              bullet.position.y -= bullet.speed * deltaTime;
-            }else if (bullet.direction == "down") {
-              bullet.position.y += bullet.speed * deltaTime;
-            }else if (bullet.direction == "right") {
-              bullet.position.x += bullet.speed * deltaTime;
-            }else if (bullet.direction == "left") {
-              bullet.position.x -= bullet.speed * deltaTime;
+        // update bullets 
+        for (auto& b : bullets) {
+            if      (b.direction == "up")    b.position.y -= b.speed * dt;
+            else if (b.direction == "down")  b.position.y += b.speed * dt;
+            else if (b.direction == "left")  b.position.x -= b.speed * dt;
+            else if (b.direction == "right") b.position.x += b.speed * dt;
+        }
+
+        // handle collisions 
+        for (auto bIt = bullets.begin(); bIt != bullets.end(); ) {
+            bool removedBullet = false;
+
+            for (auto eIt = enemies.begin(); eIt != enemies.end(); ) {
+
+                if (CheckCollisionCircles(bIt->position, Bullet::RADIUS,
+                                          eIt->position, Enemy::RADIUS)) {
+                    std::cout << "Collision!  Bullet "
+                              << std::distance(bullets.begin(), bIt)
+                              << " hit Enemy "
+                              << std::distance(enemies.begin(), eIt) << '\n';
+
+                    eIt = enemies.erase(eIt);     // kill enemy
+                    bIt = bullets.erase(bIt);     // kill bullet
+                    removedBullet = true;
+                    break;                        // bullet is gone; break inner loop
+                } else {
+                    ++eIt;
+                }
             }
+
+            if (!removedBullet) ++bIt;
         }
 
-        // Update Enemy
-        for (auto& enemy : enemies) {
-
-        }
-
-        // Remove bullets that go off screen
+        // delete off‑screen bullets 
         bullets.erase(std::remove_if(bullets.begin(), bullets.end(),
-            [&](Bullet& b) { return b.position.y < 0; }), bullets.end());
+            [&](const Bullet& b){
+                return b.position.x < 0 || b.position.x > screenWidth ||
+                       b.position.y < 0 || b.position.y > screenHeight;
+            }), bullets.end());
 
-        // Drawing
+        // draw
         BeginDrawing();
         ClearBackground(BLACK);
 
-        // Player
-        DrawCircle((int)circleX, (int)circleY, circleDiameter, WHITE);
+        DrawCircleV({circleX, circleY}, playerRadius, WHITE);
 
-        // Bullets
-        for (const auto& bullet : bullets) {
-            DrawCircleV(bullet.position, 5.0f, PINK);
-        }
-
-        for (const auto& enemy : enemies) {
-            DrawCircleV(enemy.position, 15.0f, RED);
-        }
+        for (const auto& b : bullets)  DrawCircleV(b.position, Bullet::RADIUS, PINK);
+        for (const auto& e : enemies)  DrawCircleV(e.position, Enemy::RADIUS, RED);
 
         EndDrawing();
     }
-
     CloseWindow();
     return 0;
 }
