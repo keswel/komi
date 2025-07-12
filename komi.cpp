@@ -26,6 +26,7 @@ int main() {
   
     int player_score = 0;
     int enemy_score = 0;
+    int scoreboard_gradient = 0;
 
     float circleX = screenWidth  / 2.0f;
     float circleY = screenHeight / 2.0f;
@@ -155,6 +156,8 @@ int main() {
                     eIt = enemies.erase(eIt);     // kill enemy
                     bIt = bullets.erase(bIt);     // kill bullet
                     removedBullet = true;
+
+                    scoreboard_gradient = 10;
                     player_score++;
                     break;                        // bullet is gone; break inner loop
                 } else {
@@ -181,8 +184,13 @@ int main() {
         int rectX = (screenWidth - rectWidth) / 2;
         int rectY = 10;
         
-  
-        DrawRectangleGradientH(rectX, rectY, rectWidth, rectHeight, LIGHTGRAY, RED);
+        // makes cool scoreboard updating effect.
+        if (scoreboard_gradient != 0) {
+          DrawRectangle(rectX, rectY, rectWidth, rectHeight, WHITE);
+          scoreboard_gradient--; 
+        }else{
+          DrawRectangleGradientH(rectX, rectY, rectWidth, rectHeight, LIGHTGRAY, RED);
+        }
         DrawText(scoreboard_text, rectX + 20, rectY + 10, 20, RAYWHITE);
         BeginDrawing();
         ClearBackground(BLACK);
