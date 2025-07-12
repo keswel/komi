@@ -45,12 +45,24 @@ int main() {
 
     try {
         boost::asio::connect(socket, endpoints);
+        global_socket = &socket;  // assign global pointer
 
-        // optionally read greeting
-        std::string reply(64, '\0');
-        size_t n = socket.read_some(boost::asio::buffer(reply));
-        reply.resize(n);
-        std::cout << "Server says: " << reply << std::endl;
+        // spawn thread to read from server
+        std::thread reader_thread([&socket]() {
+            try {
+                boost::asio::streambuf buf;
+                while (true) {
+                    boost::asio::read_until(socket, buf, "\n");
+                    std::istream is(&buf);
+                    std::string line;
+                    std::getline(is, line);
+                    std::cout << "Server says: " << line << std::endl;
+                }
+            } catch (std::exception& e) {
+                std::cerr << "Server read error: " << e.what() << std::endl;
+            }
+        });
+        reader_thread.detach();
 
     } catch (std::exception& e) {
         std::cerr << "Connection failed: " << e.what() << std::endl;
