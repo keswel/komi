@@ -20,30 +20,35 @@ struct Enemy {
     static constexpr float RADIUS = 15.0f;        
 };
 
+
 int main() {
-    // establish connection with server
+    boost::asio::io_context io_context;
+    tcp::resolver resolver(io_context);
+    auto endpoints = resolver.resolve("127.0.0.1", "8080");
+    tcp::socket socket(io_context);
+
     try {
-        boost::asio::io_context io_context;
-
-        // Resolve “localhost” and port 8080 → list of endpoints
-        tcp::resolver resolver(io_context);
-        auto endpoints = resolver.resolve("127.0.0.1", "8080");
-
-        // Create the socket and connect
-        tcp::socket socket(io_context);
         boost::asio::connect(socket, endpoints);
 
-        // Read the server’s message into a buffer
-        std::string reply;
-        reply.resize(64);                     // small buffer; adjust as needed
+        // read greeting
+        std::string reply(64, '\0');
         size_t n = socket.read_some(boost::asio::buffer(reply));
-
-        reply.resize(n);                      // trim unused bytes
+        reply.resize(n);
         std::cout << "Server says: " << reply << std::endl;
 
     } catch (std::exception& e) {
-        std::cerr << "Client error: " << e.what() << std::endl;
+        std::cerr << "Connection failed: " << e.what() << std::endl;
     }
+
+    // helper function to easily send data to server.
+    auto send_to_server = [&](std::string_view msg) {
+        try {
+            boost::asio::write(socket, boost::asio::buffer(msg));
+        } catch (const std::exception& e) {
+            std::cerr << "send_to_server failed: " << e.what() << '\n';
+        }
+    };
+                                             
     const int screenWidth  = 800;
     const int screenHeight = 450;
 
@@ -171,7 +176,7 @@ int main() {
             bool removedBullet = false;
 
             for (auto eIt = enemies.begin(); eIt != enemies.end(); ) {
-
+                // if collision occured
                 if (CheckCollisionCircles(bIt->position, Bullet::RADIUS,
                                           eIt->position, Enemy::RADIUS)) {
                     std::cout << "Collision!  Bullet "
@@ -185,6 +190,7 @@ int main() {
 
                     scoreboard_fx_time = 10;
                     player_score++;
+                    send_to_server("Bullet has taken out enemy!\n");
                     break;                        // bullet is gone; break inner loop
                 } else {
                     ++eIt;
