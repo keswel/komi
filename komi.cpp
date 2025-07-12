@@ -182,7 +182,7 @@ int main() {
         int rectY = 10;
         
   
-        DrawRectangle(rectX, rectY, rectWidth, rectHeight, DARKGRAY);
+        DrawRectangleGradientH(rectX, rectY, rectWidth, rectHeight, LIGHTGRAY, RED);
         DrawText(scoreboard_text, rectX + 20, rectY + 10, 20, RAYWHITE);
         BeginDrawing();
         ClearBackground(BLACK);
