@@ -6,7 +6,7 @@
 
 struct Bullet {
     Vector2 position;
-    float speed = 600.0f;
+    float speed = 1600.0f;
     std::string direction;
     static constexpr float RADIUS = 5.0f;         
 };
@@ -35,7 +35,9 @@ int main() {
     std::vector<Bullet> bullets;
     std::vector<Enemy>  enemies;
     std::string direction = "up";                 // default so first shot has a dir
-
+    
+    // needed so that when the player is not moving, bullets are not shot diagnoally.
+    std::string latest_right_direction = "up";   
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
 
@@ -61,17 +63,32 @@ int main() {
         }
         else if (IsKeyPressed(KEY_W)) {
             direction = "up";
+            latest_right_direction = direction;
         }
         else if (IsKeyPressed(KEY_S)) {
             direction = "down";
+            latest_right_direction = direction;
         }
         else if (IsKeyPressed(KEY_A)) {
             direction = "left";
+            latest_right_direction = direction;
         }
         else if (IsKeyPressed(KEY_D)) {
             direction = "right";
+            latest_right_direction = direction;
         }
         
+        // if no keys are being pressed, then shoot, left, right, up, or down.
+        bool noKeysDown = 
+            !IsKeyDown(KEY_W) &&
+            !IsKeyDown(KEY_A) &&
+            !IsKeyDown(KEY_S) &&
+            !IsKeyDown(KEY_D) &&
+            !IsKeyDown(KEY_SPACE);  
+        if (noKeysDown) {
+          direction = latest_right_direction; 
+        }
+
         // update player position.
         float len = std::sqrt(dx*dx + dy*dy);
         if (len > 0.0f) { 
