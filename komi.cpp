@@ -61,19 +61,19 @@ int main() {
         else if (IsKeyDown(KEY_S) && IsKeyDown(KEY_A)) {
             direction = "bottom left";
         }
-        else if (IsKeyPressed(KEY_W)) {
+        else if (IsKeyDown(KEY_W)) {
             direction = "up";
             latest_right_direction = direction;
         }
-        else if (IsKeyPressed(KEY_S)) {
+        else if (IsKeyDown(KEY_S)) {
             direction = "down";
             latest_right_direction = direction;
         }
-        else if (IsKeyPressed(KEY_A)) {
+        else if (IsKeyDown(KEY_A)) {
             direction = "left";
             latest_right_direction = direction;
         }
-        else if (IsKeyPressed(KEY_D)) {
+        else if (IsKeyDown(KEY_D)) {
             direction = "right";
             latest_right_direction = direction;
         }
