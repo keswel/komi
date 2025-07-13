@@ -46,6 +46,10 @@ void send_player_position(float circleX, float circleY) {
     send_to_server(msg);
 }
 
+void send_bullet_position(Bullet bullet) {
+    std::string msg = "Bullet " + std::to_string(bullet.position.x) + " " + std::to_string(bullet.position.y) + " " + bullet.direction + " " + std::to_string(bullet.speed) + " " + std::to_string(bullet.RADIUS) + "\n";
+    send_to_server(msg);
+}
 std::vector<std::string> split_by_space(std::string input) {
     std::istringstream iss(input);
     std::string word;
@@ -248,6 +252,8 @@ int main() {
         // shoot
         if (IsKeyPressed(KEY_SPACE)) {
             bullets.push_back({ {circleX, circleY}, 600.0f, direction });
+            Bullet bullet{ {circleX, circleY}, 600.0f, direction };
+            send_bullet_position(bullet);
         }
         // spawn enemy (temporary)
         if (IsKeyPressed(KEY_V)) {
