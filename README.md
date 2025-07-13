@@ -9,7 +9,7 @@ cd komi
 ```
 
 # Requirements
-Raylib
+Raylib,
 Boost.Asio
 ```
 sudo pacman -S boost boost-libs
