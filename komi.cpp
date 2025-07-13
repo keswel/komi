@@ -29,6 +29,8 @@ struct Enemy {
     static constexpr float RADIUS = 15.0f;        
 };
 
+std::vector<Bullet> bullets;
+std::vector<Enemy>  enemies;
 void send_to_server(const std::string& msg) {
     try {
         if (global_socket && global_socket->is_open()) {
@@ -115,6 +117,11 @@ void parse_server_message(const std::string& message) {
                     }
                 }
             }
+            if (tokens[2] == "Bullet") {
+
+              bullets.push_back({ {std::stof(tokens[3]), std::stof(tokens[4])}, std::stof(tokens[6]), tokens[5]});
+              
+            }
         } catch (const std::exception& e) {
             std::cerr << "Error parsing client ID: " << e.what() << std::endl;
         }
@@ -184,8 +191,6 @@ int main() {
     const float playerRadius = 15.0f;
     const float playerSpeed  = 400.0f;
 
-    std::vector<Bullet> bullets;
-    std::vector<Enemy>  enemies;
     std::string direction = "up";
     std::string latest_right_direction = "up";
     
@@ -201,16 +206,16 @@ int main() {
 
         // update facing direction
         if (IsKeyDown(KEY_W) && IsKeyDown(KEY_D)) {
-            direction = "top right";
+            direction = "top_right";
         }
         else if (IsKeyDown(KEY_W) && IsKeyDown(KEY_A)) {
-            direction = "top left";
+            direction = "top_left";
         }
         else if (IsKeyDown(KEY_S) && IsKeyDown(KEY_D)) {
-            direction = "bottom right";
+            direction = "bottom_right";
         }
         else if (IsKeyDown(KEY_S) && IsKeyDown(KEY_A)) {
-            direction = "bottom left";
+            direction = "bottom_left";
         }
         else if (IsKeyDown(KEY_W)) {
             direction = "up";
@@ -262,19 +267,19 @@ int main() {
 
         // update bullets 
         for (auto& b : bullets) {
-            if (b.direction == "top right") {
+            if (b.direction == "top_right") {
                 b.position.x += b.speed * dt;
                 b.position.y -= b.speed * dt;
             }
-            else if (b.direction == "top left") {
+            else if (b.direction == "top_left") {
                 b.position.x -= b.speed * dt;
                 b.position.y -= b.speed * dt;
             }
-            else if (b.direction == "bottom right") {
+            else if (b.direction == "bottom_right") {
                 b.position.x += b.speed * dt;
                 b.position.y += b.speed * dt;
             }
-            else if (b.direction == "bottom left") {
+            else if (b.direction == "bottom_left") {
                 b.position.x -= b.speed * dt;
                 b.position.y += b.speed * dt;
             }
