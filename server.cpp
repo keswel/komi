@@ -24,11 +24,15 @@ void session(tcp::socket socket, int client_id) {
             std::istream is(&buf);
             std::string line;
             std::getline(is, line);
-
-            std::cout << "Received from client " << client_id << ": " << line << std::endl;
-
-            std::string reply = "Message received\n";
+            
+            // data the server recieved
+            std::cout << client_id << ": " << line << std::endl;
+            
+            // broadcast recieved data.
+            std::string reply = client_id +"\n";
             boost::asio::write(socket, boost::asio::buffer(reply));
+            //std::string reply = "Message received\n";
+            //boost::asio::write(socket, boost::asio::buffer(reply));
         }
     } catch (std::exception& e) {
         std::cerr << "Exception in client " << client_id << " session: " << e.what() << std::endl;
