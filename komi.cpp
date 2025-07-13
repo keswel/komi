@@ -4,9 +4,17 @@
 #include <algorithm>
 #include <cmath>
 #include <boost/asio.hpp>
+#include <sstream>
+#include <unordered_map>
+#include <mutex>
 
 using boost::asio::ip::tcp;
 tcp::socket* global_socket = nullptr;
+std::string player_id;
+
+// thread-safe storage for other players
+std::unordered_map<int, Vector2> other_players;
+std::mutex other_players_mutex;
 
 struct Bullet {
     Vector2 position;
@@ -32,9 +40,97 @@ void send_to_server(const std::string& msg) {
         std::cerr << "send_to_server failed: " << e.what() << '\n';
     }
 }
+
 void send_player_position(float circleX, float circleY) {
-    std::string msg = "Position: " + std::to_string(circleX) + ", " + std::to_string(circleY) + "\n";
+    std::string msg = "Position " + std::to_string(circleX) + ", " + std::to_string(circleY) + "\n";
     send_to_server(msg);
+}
+
+std::vector<std::string> split_by_space(std::string input) {
+    std::istringstream iss(input);
+    std::string word;
+    std::vector<std::string> words;
+
+    while (iss >> word) {
+        words.push_back(word);
+    }
+    return words;
+}
+
+void parse_server_message(const std::string& message) {
+    std::vector<std::string> tokens = split_by_space(message);
+    
+    if (tokens.empty()) return;
+    
+    // handle client ID assignment
+    if (tokens[0] == "Client_ID") {
+        player_id = tokens[1];
+        std::cout << "PLAYER ID HAS BEEN SET TO " << player_id << std::endl;
+        return;
+    }
+    
+    // handle other player messages: "Client X: Position Y, Z"
+    if (tokens[0] == "Client" && tokens.size() >= 4) {
+        // extract client ID (remove the colon)
+        std::string client_id_str = tokens[1];
+        if (client_id_str.back() == ':') {
+            client_id_str.pop_back();
+        }
+        
+        try {
+            int client_id = std::stoi(client_id_str);
+            
+            // skip if this is our own message
+            if (std::to_string(client_id) == player_id) {
+                return;
+            }
+            
+            // parse position message: "Position X, Y"
+            if (tokens.size() >= 4 && tokens[2] == "Position") {
+                // tokens[3] should be "X," and tokens[4] should be "Y"
+                if (tokens.size() >= 5) {
+                    std::string x_str = tokens[3];
+                    std::string y_str = tokens[4];
+                    
+                    // remove comma from x coordinate
+                    if (x_str.back() == ',') {
+                        x_str.pop_back();
+                    }
+                    
+                    try {
+                        float x = std::stof(x_str);
+                        float y = std::stof(y_str);
+                        
+                        // update other player's position
+                        std::lock_guard<std::mutex> lock(other_players_mutex);
+                        other_players[client_id] = {x, y};
+                        
+                        std::cout << "Updated player " << client_id << " position to (" << x << ", " << y << ")" << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error parsing position coordinates: " << e.what() << std::endl;
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error parsing client ID: " << e.what() << std::endl;
+        }
+    }
+    
+    // handle player join/leave messages
+    if (tokens[0] == "Player" && tokens.size() >= 3) {
+        if (tokens[2] == "joined") {
+            std::cout << "Player " << tokens[1] << " joined the game" << std::endl;
+        } else if (tokens[2] == "left") {
+            try {
+                int client_id = std::stoi(tokens[1]);
+                std::lock_guard<std::mutex> lock(other_players_mutex);
+                other_players.erase(client_id);
+                std::cout << "Player " << tokens[1] << " left the game" << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "Error parsing leaving player ID: " << e.what() << std::endl;
+            }
+        }
+    }
 }
 
 int main() {
@@ -45,7 +141,7 @@ int main() {
 
     try {
         boost::asio::connect(socket, endpoints);
-        global_socket = &socket;  // assign global pointer
+        global_socket = &socket;
 
         // spawn thread to read from server
         std::thread reader_thread([&socket]() {
@@ -57,6 +153,7 @@ int main() {
                     std::string line;
                     std::getline(is, line);
                     std::cout << "Server says: " << line << std::endl;
+                    parse_server_message(line);
                 }
             } catch (std::exception& e) {
                 std::cerr << "Server read error: " << e.what() << std::endl;
@@ -80,15 +177,14 @@ int main() {
 
     float circleX = screenWidth  / 2.0f;
     float circleY = screenHeight / 2.0f;
-    const float playerRadius = 15.0f;             // matches circleDiameter
+    const float playerRadius = 15.0f;
     const float playerSpeed  = 400.0f;
 
     std::vector<Bullet> bullets;
     std::vector<Enemy>  enemies;
-    std::string direction = "up";                 // default so first shot has a dir
+    std::string direction = "up";
+    std::string latest_right_direction = "up";
     
-    // needed so that when the player is not moving, bullets are not shot diagnoally.
-    std::string latest_right_direction = "up";   
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
 
@@ -99,7 +195,7 @@ int main() {
         if (IsKeyDown(KEY_A) && circleX - playerRadius > 0) dx = -1;
         if (IsKeyDown(KEY_D) && circleX + playerRadius < screenWidth) dx =  1;
 
-        // update facing direction once, on press
+        // update facing direction
         if (IsKeyDown(KEY_W) && IsKeyDown(KEY_D)) {
             direction = "top right";
         }
@@ -129,7 +225,6 @@ int main() {
             latest_right_direction = direction;
         }
         
-        // if no keys are being pressed, then shoot, left, right, up, or down.
         bool noKeysDown = 
             !IsKeyDown(KEY_W) &&
             !IsKeyDown(KEY_A) &&
@@ -140,7 +235,7 @@ int main() {
           direction = latest_right_direction; 
         }
 
-        // update player position.
+        // update player position
         float len = std::sqrt(dx*dx + dy*dy);
         if (len > 0.0f) { 
           dx /= len;  
@@ -162,20 +257,20 @@ int main() {
         // update bullets 
         for (auto& b : bullets) {
             if (b.direction == "top right") {
-                b.position.x += b.speed * dt;  // move right (x increasing)
-                b.position.y -= b.speed * dt;  // move up (y decreasing)
+                b.position.x += b.speed * dt;
+                b.position.y -= b.speed * dt;
             }
             else if (b.direction == "top left") {
-                b.position.x -= b.speed * dt;  // move left
-                b.position.y -= b.speed * dt;  // move up
+                b.position.x -= b.speed * dt;
+                b.position.y -= b.speed * dt;
             }
             else if (b.direction == "bottom right") {
-                b.position.x += b.speed * dt;  // move right
-                b.position.y += b.speed * dt;  // move down
+                b.position.x += b.speed * dt;
+                b.position.y += b.speed * dt;
             }
             else if (b.direction == "bottom left") {
-                b.position.x -= b.speed * dt;  // move left
-                b.position.y += b.speed * dt;  // move down
+                b.position.x -= b.speed * dt;
+                b.position.y += b.speed * dt;
             }
             else if (b.direction == "up") {
                 b.position.y -= b.speed * dt;
@@ -191,12 +286,11 @@ int main() {
             }
         }
 
-        // handle collisions 
+        // handle collisions with local enemies
         for (auto bIt = bullets.begin(); bIt != bullets.end(); ) {
             bool removedBullet = false;
 
             for (auto eIt = enemies.begin(); eIt != enemies.end(); ) {
-                // if collision occured
                 if (CheckCollisionCircles(bIt->position, Bullet::RADIUS,
                                           eIt->position, Enemy::RADIUS)) {
                     std::cout << "Collision!  Bullet "
@@ -204,14 +298,14 @@ int main() {
                               << " hit Enemy "
                               << std::distance(enemies.begin(), eIt) << '\n';
 
-                    eIt = enemies.erase(eIt);     // kill enemy
-                    bIt = bullets.erase(bIt);     // kill bullet
+                    eIt = enemies.erase(eIt);
+                    bIt = bullets.erase(bIt);
                     removedBullet = true;
 
                     scoreboard_fx_time = 10;
                     player_score++;
                     send_to_server("Bullet has taken out enemy!\n");
-                    break;                        // bullet is gone; break inner loop
+                    break;
                 } else {
                     ++eIt;
                 }
@@ -227,33 +321,44 @@ int main() {
                        b.position.y < 0 || b.position.y > screenHeight;
             }), bullets.end());
 
+        BeginDrawing();
+        ClearBackground(BLACK);
+
+        // draw current player (white circle)
+        DrawCircleV({circleX, circleY}, playerRadius, WHITE);
+
+        // draw other players (red circles - like enemies)
+        {
+            std::lock_guard<std::mutex> lock(other_players_mutex);
+            for (const auto& player : other_players) {
+                DrawCircleV(player.second, playerRadius, RED);
+            }
+        }
+
+        // draw bullets and enemies
+        for (const auto& b : bullets)  DrawCircleV(b.position, Bullet::RADIUS, PINK);
+        for (const auto& e : enemies)  DrawCircleV(e.position, Enemy::RADIUS, ORANGE);
+
         // draw scoreboard
         std::string scoreboard = std::to_string(player_score) + " | " + std::to_string(enemy_score);
         const char* scoreboard_text = scoreboard.c_str();
         int textWidth = MeasureText(scoreboard_text, 20);
-        int rectWidth = textWidth + 40;  // padding
+        int rectWidth = textWidth + 40;
         int rectHeight = 40;
         int rectX = (screenWidth - rectWidth) / 2;
         int rectY = 10;
         
-        // makes cool scoreboard updating effect.
         if (scoreboard_fx_time != 0) {
-          DrawRectangle(rectX, rectY, rectWidth, rectHeight, WHITE);
-          scoreboard_fx_time--; 
-        }else{
-          DrawRectangleGradientH(rectX, rectY, rectWidth, rectHeight, LIGHTGRAY, RED);
+            DrawRectangle(rectX, rectY, rectWidth, rectHeight, WHITE);
+            scoreboard_fx_time--; 
+        } else {
+            DrawRectangleGradientH(rectX, rectY, rectWidth, rectHeight, LIGHTGRAY, RED);
         }
         DrawText(scoreboard_text, rectX + 20, rectY + 10, 20, RAYWHITE);
-        BeginDrawing();
-        ClearBackground(BLACK);
-
-        DrawCircleV({circleX, circleY}, playerRadius, WHITE);
-
-        for (const auto& b : bullets)  DrawCircleV(b.position, Bullet::RADIUS, PINK);
-        for (const auto& e : enemies)  DrawCircleV(e.position, Enemy::RADIUS, RED);
 
         EndDrawing();
     }
+    
     CloseWindow();
     return 0;
 }
