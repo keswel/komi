@@ -11,6 +11,7 @@
 using boost::asio::ip::tcp;
 tcp::socket* global_socket = nullptr;
 std::string player_id;
+bool player_id_received = false;
 
 // thread-safe storage for other players
 std::unordered_map<int, Vector2> other_players;
@@ -27,7 +28,7 @@ struct Bullet {
 struct Enemy {
     Vector2 position;
     float   speed = 10.0f;
-    std::string client_id;          // <— matches the server’s numeric id as text
+    int client_id;          
     static constexpr float RADIUS = 15.0f;
 };
 
@@ -52,7 +53,7 @@ void send_player_position(float circleX, float circleY) {
 }
 
 void send_bullet_position(Bullet bullet) {
-    std::string msg = "Bullet " + std::to_string(bullet.position.x) + " " + std::to_string(bullet.position.y) + " " + bullet.direction + " " + std::to_string(bullet.speed) + " " + std::to_string(bullet.RADIUS) + "\n";
+    std::string msg = "Shot " + std::to_string(bullet.position.x) + " " + std::to_string(bullet.position.y) + " " + std::to_string(bullet.speed) + " " + bullet.direction + "\n";
     send_to_server(msg);
 }
 
@@ -67,6 +68,45 @@ std::vector<std::string> split_by_space(std::string input) {
     return words;
 }
 
+void create_enemy_for_player(int client_id, Vector2 position) {
+    std::lock_guard<std::mutex> lock(enemies_mutex);
+    
+    // check if enemy already exists for this player
+    for (const auto& enemy : enemies) {
+        if (enemy.client_id == client_id) {
+            return; // enemy already exists
+        }
+    }
+    
+    // create new enemy
+    Enemy e{
+        position,
+        10.0f,
+        client_id
+    };
+    enemies.push_back(std::move(e));
+    std::cout << "Created enemy for player " << client_id << std::endl;
+}
+
+void update_enemy_position(int client_id, Vector2 position) {
+    std::lock_guard<std::mutex> lock(enemies_mutex);
+    for (Enemy& enemy : enemies) {
+        if (enemy.client_id == client_id) {
+            enemy.position = position;
+            return;
+        }
+    }
+}
+
+void remove_enemy_for_player(int client_id) {
+    std::lock_guard<std::mutex> lock(enemies_mutex);
+    enemies.erase(std::remove_if(enemies.begin(), enemies.end(),
+        [client_id](const Enemy& e) {
+            return e.client_id == client_id;
+        }), enemies.end());
+    std::cout << "Removed enemy for player " << client_id << std::endl;
+}
+
 void parse_server_message(const std::string& message) {
     std::vector<std::string> tokens = split_by_space(message);
     
@@ -75,6 +115,7 @@ void parse_server_message(const std::string& message) {
     // handle client ID assignment
     if (tokens[0] == "Client_ID") {
         player_id = tokens[1];
+        player_id_received = true;
         std::cout << "PLAYER ID HAS BEEN SET TO " << player_id << std::endl;
         return;
     }
@@ -94,9 +135,7 @@ void parse_server_message(const std::string& message) {
             if (std::to_string(client_id) == player_id) {
                 return;
             }
-            // Packet Format
-            // Client x: Definer ... 
-            // 0      1  2       ...
+            
             // parse position message: "Position X, Y"
             if (tokens.size() >= 4 && tokens[2] == "Position") {
                 // tokens[3] should be "X," and tokens[4] should be "Y"
@@ -112,50 +151,29 @@ void parse_server_message(const std::string& message) {
                     try {
                         float x = std::stof(x_str);
                         float y = std::stof(y_str);
+                        Vector2 position = {x, y};
                         
                         // update other player's position
-                        std::lock_guard<std::mutex> lock(other_players_mutex);
-                        other_players[client_id] = {x, y};
-                        
                         {
-                            std::lock_guard<std::mutex> lock(enemies_mutex);
-                            for (Enemy& enemy : enemies) {
-                                if (enemy.client_id == client_id_str) {   // same id ?
-                                    enemy.position = { x, y };            // move him
-                                    break;                                // only one match
-                                }
+                            std::lock_guard<std::mutex> lock(other_players_mutex);
+                            bool was_new_player = other_players.find(client_id) == other_players.end();
+                            other_players[client_id] = position;
+                            
+                            // If this is a new player, create an enemy for them
+                            if (was_new_player) {
+                                create_enemy_for_player(client_id, position);
                             }
                         }
-                         
-                        std::cout << "Updated player " << client_id << " position to (" << x << ", " << y << ")" << std::endl;
+                        
+                        // update enemy position
+                        update_enemy_position(client_id, position);
+                        
+                        //std::cout << "Updated player " << client_id << " position to (" << x << ", " << y << ")" << std::endl;
                     } catch (const std::exception& e) {
                         std::cerr << "Error parsing position coordinates: " << e.what() << std::endl;
                     }
                 }
             }
-            if (tokens[2] == "Bullet") {
-
-              bullets.push_back({ {std::stof(tokens[3]), std::stof(tokens[4])}, std::stof(tokens[6]), tokens[5]});
-              
-            }
-            if (tokens[2] == "Create_Enemy") {
-                try {
-                    Enemy e{
-                        { std::stof(tokens[3]), std::stof(tokens[4]) },  // position
-                        std::stof(tokens[5]),                            // speed
-                        tokens[6]                                        // client_id
-                    };
-
-                    std::lock_guard<std::mutex> lock(enemies_mutex);
-                    enemies.push_back(std::move(e));
-
-                    std::cout << "Enemy " << e.client_id << " created\n";
-                } catch (const std::exception& ex) {
-                    std::cerr << "Bad Create_Enemy packet: " << ex.what() << '\n';
-                }
-            }
-    //std::string ENEMY_CREATE_PACKET = "Create_Enemy " + std::to_string(circleX) + " " + std::to_string(circleY) + " " + std::to_string(playerSpeed) + " " + std::to_string(playerRadius) + "\n";
-    //send_to_server(ENEMY_CREATE_PACKET);
         } catch (const std::exception& e) {
             std::cerr << "Error parsing client ID: " << e.what() << std::endl;
         }
@@ -165,11 +183,15 @@ void parse_server_message(const std::string& message) {
     if (tokens[0] == "Player" && tokens.size() >= 3) {
         if (tokens[2] == "joined") {
             std::cout << "Player " << tokens[1] << " joined the game" << std::endl;
+            // Enemy will be created when we receive their first position update
         } else if (tokens[2] == "left") {
             try {
                 int client_id = std::stoi(tokens[1]);
-                std::lock_guard<std::mutex> lock(other_players_mutex);
-                other_players.erase(client_id);
+                {
+                    std::lock_guard<std::mutex> lock(other_players_mutex);
+                    other_players.erase(client_id);
+                }
+                remove_enemy_for_player(client_id);
                 std::cout << "Player " << tokens[1] << " left the game" << std::endl;
             } catch (const std::exception& e) {
                 std::cerr << "Error parsing leaving player ID: " << e.what() << std::endl;
@@ -197,7 +219,7 @@ int main() {
                     std::istream is(&buf);
                     std::string line;
                     std::getline(is, line);
-                    std::cout << "Server says: " << line << std::endl;
+                    //std::cout << "Server says: " << line << std::endl;
                     parse_server_message(line);
                 }
             } catch (std::exception& e) {
@@ -227,10 +249,6 @@ int main() {
 
     std::string direction = "up";
     std::string latest_right_direction = "up";
-    
-    // CREATE ENEMY ON OTHER CLIENTS.
-    std::string ENEMY_CREATE_PACKET = "Create_Enemy " + std::to_string(circleX) + " " + std::to_string(circleY) + " " + std::to_string(playerSpeed) + " " + std::to_string(playerRadius) + " " + player_id + "\n";
-    send_to_server(ENEMY_CREATE_PACKET);
 
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
@@ -290,7 +308,11 @@ int main() {
         }
         circleX += dx * playerSpeed * dt;
         circleY += dy * playerSpeed * dt;
-        send_player_position(circleX, circleY);
+        
+        // Only send position if we have received our player ID
+        if (player_id_received) {
+            send_player_position(circleX, circleY);
+        }
         
         // shoot
         if (IsKeyPressed(KEY_SPACE)) {
@@ -298,9 +320,10 @@ int main() {
             Bullet bullet{ {circleX, circleY}, 600.0f, direction };
             send_bullet_position(bullet);
         }
-        // spawn enemy (temporary)
+        
+        // spawn enemy (temporary - for testing)
         if (IsKeyPressed(KEY_V)) {
-            enemies.push_back({ {circleX, circleY}, 10.0f });
+            enemies.push_back({ {circleX, circleY}, 10.0f, -1 }); // -1 for local test enemies
         }
 
         // update bullets 
@@ -335,18 +358,18 @@ int main() {
             }
         }
 
-        // handle collisions with local enemies
+        // handle collisions with enemies
         for (auto bIt = bullets.begin(); bIt != bullets.end(); ) {
             bool removedBullet = false;
 
-            // ---------- NEW mutex scope around the inner loop ----------
             {
                 std::lock_guard<std::mutex> lock(enemies_mutex);
-                for (auto eIt = enemies.begin(); eIt != enemies.end(); /* no ++ here */) {
+                for (auto eIt = enemies.begin(); eIt != enemies.end(); ) {
                     if (CheckCollisionCircles(bIt->position, Bullet::RADIUS,
                                               eIt->position, Enemy::RADIUS)) {
 
-                        eIt = enemies.erase(eIt);     // ← safe: still inside lock
+                        std::cout << "Hit enemy (player " << eIt->client_id << ")!" << std::endl;
+                        eIt = enemies.erase(eIt);
                         bIt = bullets.erase(bIt);
                         removedBullet = true;
 
@@ -359,7 +382,6 @@ int main() {
                     }
                 }
             }
-            // ------------------------------------------------------------
 
             if (!removedBullet) ++bIt;
         }
@@ -377,7 +399,7 @@ int main() {
         // draw current player (white circle)
         DrawCircleV({circleX, circleY}, playerRadius, WHITE);
 
-        // draw other players (red circles - like enemies)
+        // draw other players (red circles)
         {
             std::lock_guard<std::mutex> lock(other_players_mutex);
             for (const auto& player : other_players) {
@@ -386,11 +408,12 @@ int main() {
         }
 
         // draw bullets and enemies
-        for (const auto& b : bullets)  DrawCircleV(b.position, Bullet::RADIUS, PINK);
+        for (const auto& b : bullets) DrawCircleV(b.position, Bullet::RADIUS, PINK);
         {
             std::lock_guard<std::mutex> lock(enemies_mutex);
-            for (const auto& e : enemies)
+            for (const auto& e : enemies) {
                 DrawCircleV(e.position, Enemy::RADIUS, ORANGE);
+            }
         }
 
         // draw scoreboard
