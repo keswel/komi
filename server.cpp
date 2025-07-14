@@ -213,7 +213,6 @@ void game_loop() {
         {
             std::lock_guard<std::mutex> lock(game_state_mutex);
             
-            // Add this line:
             broadcast_to_all("BulletsStart\n");
             
             for (const auto& bullet : bullets) {

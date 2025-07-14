@@ -24,6 +24,8 @@ int scoreboard_fx_time = 0;
 int shoot_fx_time = 0;
 
 std::string selected_weapon = "pistol";
+std::string direction = "up";
+std::string latest_right_direction = "up";
 
 const int screenWidth  = 1280;
 const int screenHeight = 720;
@@ -63,8 +65,35 @@ void send_player_position(float circleX, float circleY) {
 }
 
 void send_bullet_position(Bullet bullet) {
-    std::string msg = "Shot " + std::to_string(bullet.position.x) + " " + std::to_string(bullet.position.y) + " " + std::to_string(bullet.speed) + " " + bullet.direction + "\n";
-    send_to_server(msg);
+    std::string msg;
+    if (selected_weapon == "pistol") {
+        msg = "Shot " + std::to_string(bullet.position.x) + " " + std::to_string(bullet.position.y) + " " + std::to_string(bullet.speed) + " " + bullet.direction + "\n";
+        send_to_server(msg);
+    } else if (selected_weapon == "shotgun") {
+        // define spread directions for each base direction
+        static const std::unordered_map<std::string, std::vector<std::string>> spread_directions = {
+            {"top_right",          {"up", "top_right", "right"}},
+            {"top_left",          {"up", "top_left", "left"}},
+            {"bottom_right",          {"down", "bottom_right", "right"}},
+            {"bottom_left",          {"down", "bottom_left", "left"}},
+            {"right",       {"right", "top_right", "bottom_right"}},
+            {"left",        {"left", "top_left", "bottom_left"}},
+            {"up",          {"up", "top_left", "top_right"}},
+            {"down",        {"down", "bottom_left", "bottom_right"}}
+        };
+
+        auto it = spread_directions.find(bullet.direction);
+        if (it != spread_directions.end()) {
+            for (const std::string& dir : it->second) {
+                msg = "Shot " + std::to_string(bullet.position.x) + " " +
+                      std::to_string(bullet.position.y) + " " +
+                      std::to_string(bullet.speed) + " " + dir + "\n";
+                send_to_server(msg);
+            }
+        } else {
+            std::cerr << "Unknown direction: " << latest_right_direction << "\n";
+        }
+    }
 }
 
 std::vector<std::string> split_by_space(std::string input) {
@@ -223,7 +252,7 @@ void parse_server_message(const std::string& message) {
     const std::string& type = tokens[0];
 
     if (type == "Client_ID")         return handle_client_id(tokens);
-    else if (type == "BulletsStart") return handle_bullets_start();  // Add this line
+    else if (type == "BulletsStart") return handle_bullets_start();  
     else if (type == "Bullet")       return handle_bullet_update(tokens);
     else if (type == "Hit")          return handle_hit(tokens);
     else if (type == "Client")       return handle_client_position(tokens);
@@ -297,7 +326,7 @@ void draw_scoreboard() {
 int main() {
     boost::asio::io_context io_context;
     tcp::resolver resolver(io_context);
-    auto endpoints = resolver.resolve("127.0.0.1", "8080");
+    auto endpoints = resolver.resolve("192.168.1.79", "8080");
     tcp::socket socket(io_context);
 
     try {
@@ -325,18 +354,14 @@ int main() {
         std::cerr << "Connection failed: " << e.what() << std::endl;
     }
 
-
     InitWindow(screenWidth, screenHeight, "komi");
     SetTargetFPS(240);
   
-
     float circleX = screenWidth  / 2.0f;
     float circleY = screenHeight / 2.0f;
     const float playerRadius = 15.0f;
     const float playerSpeed  = 400.0f;
 
-    std::string direction = "up";
-    std::string latest_right_direction = "up";
 
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
