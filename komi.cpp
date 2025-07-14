@@ -125,6 +125,10 @@ void handle_client_id(const std::vector<std::string>& tokens) {
     std::cout << "PLAYER ID HAS BEEN SET TO " << player_id << std::endl;
 }
 
+void handle_bullets_start() {
+    bullets.clear();
+}
+
 void handle_bullet_update(const std::vector<std::string>& tokens) {
     if (tokens.size() < 6) return;
 
@@ -134,12 +138,6 @@ void handle_bullet_update(const std::vector<std::string>& tokens) {
         std::string direction = tokens[3];
         float speed = std::stof(tokens[4]);
         float radius = std::stof(tokens[5]);
-
-        static bool first_bullet_update = true;
-        if (first_bullet_update) {
-            bullets.clear();
-            first_bullet_update = false;
-        }
 
         bullets.push_back({{x, y}, speed, direction});
 
@@ -225,6 +223,7 @@ void parse_server_message(const std::string& message) {
     const std::string& type = tokens[0];
 
     if (type == "Client_ID")         return handle_client_id(tokens);
+    else if (type == "BulletsStart") return handle_bullets_start();  // Add this line
     else if (type == "Bullet")       return handle_bullet_update(tokens);
     else if (type == "Hit")          return handle_hit(tokens);
     else if (type == "Client")       return handle_client_position(tokens);

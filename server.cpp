@@ -53,8 +53,8 @@ std::mutex clients_mutex;
 std::mutex game_state_mutex;
 
 // game constants
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 450;
+const int SCREEN_WIDTH = 1280;
+const int SCREEN_HEIGHT = 720;
 const float TICK_RATE = 60.0f; // server tick rate
 const float BULLET_LIFETIME = 5.0f; // seconds
 
@@ -212,6 +212,10 @@ void game_loop() {
         // broadcast bullet positions to all clients
         {
             std::lock_guard<std::mutex> lock(game_state_mutex);
+            
+            // Add this line:
+            broadcast_to_all("BulletsStart\n");
+            
             for (const auto& bullet : bullets) {
                 std::string bullet_msg = "Bullet " + std::to_string(bullet.position.x) + 
                                        " " + std::to_string(bullet.position.y) + 
