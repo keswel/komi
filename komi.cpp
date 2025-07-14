@@ -23,6 +23,9 @@ int enemy_score = 0;
 int scoreboard_fx_time = 0;
 int shoot_fx_time = 0;
 
+const int screenWidth  = 800;
+const int screenHeight = 450;
+
 struct Bullet {
     Vector2 position;
     float speed = 1600.0f;
@@ -213,7 +216,6 @@ void handle_player_event(const std::vector<std::string>& tokens) {
         }
     }
 }
-
 void parse_server_message(const std::string& message) {
     std::vector<std::string> tokens = split_by_space(message);
     if (tokens.empty()) return;
@@ -226,6 +228,56 @@ void parse_server_message(const std::string& message) {
     else if (type == "Client")       return handle_client_position(tokens);
     else if (type == "Player")       return handle_player_event(tokens);
 }
+
+void draw_weapons_selection() {
+    std::string weapons_text = "1. pistol\n2. shotgun";
+    const char* weapons_text_c = weapons_text.c_str();
+
+    int fontSize = 20;
+    int padding = 10;
+
+    // count lines
+    int lines = 1;
+    for (const char* p = weapons_text_c; *p; p++) {
+        if (*p == '\n') lines++;
+    }
+
+    // raylib's MeasureText only works on a single line, so we measure each line
+    int maxLineWidth = 0;
+    std::istringstream stream(weapons_text);
+    std::string line;
+    while (std::getline(stream, line)) {
+        int lineWidth = MeasureText(line.c_str(), fontSize);
+        if (lineWidth > maxLineWidth) maxLineWidth = lineWidth;
+    }
+
+    int rectWidth = maxLineWidth + 2 * padding;
+    int rectHeight = lines * fontSize + 2 * padding;
+
+    int rectX = 10;
+    int rectY = screenHeight - rectHeight - 10;
+
+    DrawRectangle(rectX, rectY, rectWidth, rectHeight, LIGHTGRAY);
+    DrawText(weapons_text_c, rectX + padding, rectY + padding, fontSize, BLACK);
+}
+void draw_scoreboard() {
+    std::string scoreboard = std::to_string(player_score) + " | " + std::to_string(enemy_score);
+    const char* scoreboard_text = scoreboard.c_str();
+    int textWidth = MeasureText(scoreboard_text, 20);
+    int rectWidth = textWidth + 40;
+    int rectHeight = 40;
+    int rectX = (screenWidth - rectWidth) / 2;
+    int rectY = 10;
+
+    if (scoreboard_fx_time != 0) {
+      DrawRectangle(rectX, rectY, rectWidth, rectHeight, WHITE);
+      scoreboard_fx_time--; 
+    } else {
+      DrawRectangleGradientH(rectX, rectY, rectWidth, rectHeight, LIGHTGRAY, RED);
+    }
+      DrawText(scoreboard_text, rectX + 20, rectY + 10, 20, RAYWHITE);
+}
+
 int main() {
     boost::asio::io_context io_context;
     tcp::resolver resolver(io_context);
@@ -257,8 +309,6 @@ int main() {
         std::cerr << "Connection failed: " << e.what() << std::endl;
     }
 
-    const int screenWidth  = 800;
-    const int screenHeight = 450;
 
     InitWindow(screenWidth, screenHeight, "komi");
     SetTargetFPS(240);
@@ -418,6 +468,9 @@ int main() {
         BeginDrawing();
         ClearBackground(BLACK);
 
+        draw_scoreboard();
+        draw_weapons_selection();
+
         // draw current player (white circle)
         DrawCircleV({circleX, circleY}, playerRadius, WHITE);
 
@@ -438,26 +491,10 @@ int main() {
             }
         }
 
-        // draw scoreboard
-        std::string scoreboard = std::to_string(player_score) + " | " + std::to_string(enemy_score);
-        const char* scoreboard_text = scoreboard.c_str();
-        int textWidth = MeasureText(scoreboard_text, 20);
-        int rectWidth = textWidth + 40;
-        int rectHeight = 40;
-        int rectX = (screenWidth - rectWidth) / 2;
-        int rectY = 10;
-        
-        if (scoreboard_fx_time != 0) {
-            DrawRectangle(rectX, rectY, rectWidth, rectHeight, WHITE);
-            scoreboard_fx_time--; 
-        } else {
-            DrawRectangleGradientH(rectX, rectY, rectWidth, rectHeight, LIGHTGRAY, RED);
-        }
-        DrawText(scoreboard_text, rectX + 20, rectY + 10, 20, RAYWHITE);
-
         EndDrawing();
     }
     
     CloseWindow();
     return 0;
 }
+
