@@ -23,6 +23,8 @@ int enemy_score = 0;
 int scoreboard_fx_time = 0;
 int shoot_fx_time = 0;
 
+std::string selected_weapon = "pistol";
+
 const int screenWidth  = 1280;
 const int screenHeight = 720;
 
@@ -230,35 +232,50 @@ void parse_server_message(const std::string& message) {
 }
 
 void draw_weapons_selection() {
-    std::string weapons_text = "1. pistol\n2. shotgun";
-    const char* weapons_text_c = weapons_text.c_str();
+    std::string pistol_text = "1. pistol";
+    std::string shotgun_text = "2. shotgun";
+    int pistol_font = 20;
+    int shotgun_font = 20;
+    if (selected_weapon == "pistol") {
+      pistol_font = 23;
+    }else if (selected_weapon == "shotgun") {
+      shotgun_font = 23;
+    }
 
-    int fontSize = 20;
+    //int fontSize = 20;
     int padding = 10;
 
-    // count lines
-    int lines = 1;
-    for (const char* p = weapons_text_c; *p; p++) {
-        if (*p == '\n') lines++;
-    }
+    int lines = 2;
 
-    // raylib's MeasureText only works on a single line, so we measure each line
-    int maxLineWidth = 0;
-    std::istringstream stream(weapons_text);
-    std::string line;
-    while (std::getline(stream, line)) {
-        int lineWidth = MeasureText(line.c_str(), fontSize);
-        if (lineWidth > maxLineWidth) maxLineWidth = lineWidth;
-    }
+    // measure maximum line width
+    int maxLineWidth = std::max(
+        MeasureText(pistol_text.c_str(), pistol_font),
+        MeasureText(shotgun_text.c_str(), shotgun_font)
+    );
 
     int rectWidth = maxLineWidth + 2 * padding;
-    int rectHeight = lines * fontSize + 2 * padding;
+    int rectHeight = lines * 23 + 2 * padding;
 
     int rectX = 10;
     int rectY = screenHeight - rectHeight - 10;
 
-    DrawRectangle(rectX, rectY, rectWidth, rectHeight, LIGHTGRAY);
-    DrawText(weapons_text_c, rectX + padding, rectY + padding, fontSize, BLACK);
+    // draw background
+    DrawRectangle(rectX, rectY, rectWidth, rectHeight, BLACK);
+
+    // selected item (pure white)
+    const Color COLOR_SELECTED   = { 255, 255, 255, 255 };   // R, G, B, A
+
+    // un‑selected item (very light grey, ~15 % darker)
+    const Color COLOR_UNSELECTED = { 220, 220, 220, 255 };
+
+    // draw each line of text
+    if (selected_weapon == "pistol") {
+      DrawText(pistol_text.c_str(), rectX + padding, rectY + padding, pistol_font, COLOR_SELECTED);
+      DrawText(shotgun_text.c_str(), rectX + padding, rectY + padding + shotgun_font, shotgun_font, COLOR_UNSELECTED);
+    }else if (selected_weapon == "shotgun") {
+      DrawText(pistol_text.c_str(), rectX + padding, rectY + padding, pistol_font, COLOR_UNSELECTED);
+      DrawText(shotgun_text.c_str(), rectX + padding, rectY + padding + shotgun_font, shotgun_font+2, COLOR_SELECTED);
+    }
 }
 void draw_scoreboard() {
     std::string scoreboard = std::to_string(player_score) + " | " + std::to_string(enemy_score);
@@ -381,11 +398,19 @@ int main() {
         circleX += dx * playerSpeed * dt;
         circleY += dy * playerSpeed * dt;
         
-        // Only send position if we have received our player ID
+        // only send position if we have received our player ID
         if (player_id_received) {
             send_player_position(circleX, circleY);
         }
         
+        if (IsKeyPressed(KEY_ONE)) {
+          selected_weapon = "pistol";
+        }
+
+        if (IsKeyPressed(KEY_TWO)) {
+          selected_weapon = "shotgun";
+        }
+
         // shoot
         if (IsKeyPressed(KEY_SPACE)) {
             bullets.push_back({ {circleX, circleY}, 600.0f, direction });
@@ -466,7 +491,7 @@ int main() {
             }), bullets.end());
 
         BeginDrawing();
-        ClearBackground(BLACK);
+        ClearBackground(DARKGRAY);
 
         draw_scoreboard();
         draw_weapons_selection();
