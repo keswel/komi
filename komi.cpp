@@ -18,6 +18,10 @@ std::unordered_map<int, Vector2> other_players;
 std::mutex other_players_mutex;
 std::mutex enemies_mutex;
 
+int player_score = 0;
+int enemy_score = 0;
+int scoreboard_fx_time = 0;
+
 struct Bullet {
     Vector2 position;
     float speed = 1600.0f;
@@ -120,6 +124,56 @@ void parse_server_message(const std::string& message) {
         return;
     }
     
+    // handle bullet position updates from server
+    if (tokens[0] == "Bullet" && tokens.size() >= 6) {
+        try {
+            // Parse: "Bullet x y direction speed radius"
+            float x = std::stof(tokens[1]);
+            float y = std::stof(tokens[2]);
+            std::string direction = tokens[3];
+            float speed = std::stof(tokens[4]);
+            float radius = std::stof(tokens[5]);
+            
+            // clear existing bullets and replace with server state
+            // this ensures client bullets match server exactly
+            static bool first_bullet_update = true;
+            if (first_bullet_update) {
+                bullets.clear();
+                first_bullet_update = false;
+            }
+            
+            // add bullet to local rendering (server is authoritative)
+            bullets.push_back({{x, y}, speed, direction});
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error parsing bullet message: " << e.what() << std::endl;
+        }
+        return;
+    }
+    
+    // handle hit messages from server
+    if (tokens[0] == "Hit" && tokens.size() >= 3) {
+        try {
+            int shooter_id = std::stoi(tokens[1]);
+            int hit_player_id = std::stoi(tokens[2]);
+            
+            // if we're the shooter, increment our score
+            if (std::to_string(shooter_id) == player_id) {
+                player_score++;
+                scoreboard_fx_time = 10;
+                std::cout << "We hit player " << hit_player_id << "!" << std::endl;
+            }
+            // if we were hit, increment enemy score
+            else if (std::to_string(hit_player_id) == player_id) {
+                enemy_score++;
+                std::cout << "We were hit by player " << shooter_id << "!" << std::endl;
+            }
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error parsing hit message: " << e.what() << std::endl;
+        }
+        return;
+    }
     // handle other player messages: "Client X: Position Y, Z"
     if (tokens[0] == "Client" && tokens.size() >= 4) {
         // extract client ID (remove the colon)
@@ -238,9 +292,6 @@ int main() {
     InitWindow(screenWidth, screenHeight, "komi");
     SetTargetFPS(240);
   
-    int player_score = 0;
-    int enemy_score = 0;
-    int scoreboard_fx_time = 0;
 
     float circleX = screenWidth  / 2.0f;
     float circleY = screenHeight / 2.0f;
