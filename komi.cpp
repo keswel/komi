@@ -111,149 +111,120 @@ void remove_enemy_for_player(int client_id) {
     std::cout << "Removed enemy for player " << client_id << std::endl;
 }
 
-void parse_server_message(const std::string& message) {
-    std::vector<std::string> tokens = split_by_space(message);
-    
-    if (tokens.empty()) return;
-    
-    // handle client ID assignment
-    if (tokens[0] == "Client_ID") {
-        player_id = tokens[1];
-        player_id_received = true;
-        std::cout << "PLAYER ID HAS BEEN SET TO " << player_id << std::endl;
-        return;
+
+void handle_client_id(const std::vector<std::string>& tokens) {
+    if (tokens.size() < 2) return;
+    player_id = tokens[1];
+    player_id_received = true;
+    std::cout << "PLAYER ID HAS BEEN SET TO " << player_id << std::endl;
+}
+
+void handle_bullet_update(const std::vector<std::string>& tokens) {
+    if (tokens.size() < 6) return;
+
+    try {
+        float x = std::stof(tokens[1]);
+        float y = std::stof(tokens[2]);
+        std::string direction = tokens[3];
+        float speed = std::stof(tokens[4]);
+        float radius = std::stof(tokens[5]);
+
+        static bool first_bullet_update = true;
+        if (first_bullet_update) {
+            bullets.clear();
+            first_bullet_update = false;
+        }
+
+        bullets.push_back({{x, y}, speed, direction});
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error parsing bullet message: " << e.what() << std::endl;
     }
-    
-    // handle bullet position updates from server
-    if (tokens[0] == "Bullet" && tokens.size() >= 6) {
+}
+void handle_hit(const std::vector<std::string>& tokens) {
+    if (tokens.size() < 3) return;
+
+    try {
+        int shooter_id = std::stoi(tokens[1]);
+        int hit_player_id = std::stoi(tokens[2]);
+
+        if (std::to_string(shooter_id) == player_id) {
+            player_score++;
+            scoreboard_fx_time = 10;
+            std::cout << "We hit player " << hit_player_id << "!" << std::endl;
+        } else if (std::to_string(hit_player_id) == player_id) {
+            enemy_score++;
+            std::cout << "We were hit by player " << shooter_id << "!" << std::endl;
+        }
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error parsing hit message: " << e.what() << std::endl;
+    }
+}
+void handle_client_position(const std::vector<std::string>& tokens) {
+    if (tokens.size() < 5 || tokens[2] != "Position") return;
+
+    std::string client_id_str = tokens[1];
+    if (client_id_str.back() == ':') client_id_str.pop_back();
+
+    try {
+        int client_id = std::stoi(client_id_str);
+        if (std::to_string(client_id) == player_id) return;
+
+        std::string x_str = tokens[3];
+        std::string y_str = tokens[4];
+        if (x_str.back() == ',') x_str.pop_back();
+
+        float x = std::stof(x_str);
+        float y = std::stof(y_str);
+        Vector2 position = {x, y};
+
+        {
+            std::lock_guard<std::mutex> lock(other_players_mutex);
+            bool was_new_player = other_players.find(client_id) == other_players.end();
+            other_players[client_id] = position;
+        }
+
+        update_enemy_position(client_id, position);
+    } catch (const std::exception& e) {
+        std::cerr << "Error parsing client position: " << e.what() << std::endl;
+    }
+}
+void handle_player_event(const std::vector<std::string>& tokens) {
+    if (tokens.size() < 3) return;
+
+    const std::string& action = tokens[2];
+    const std::string& player_id_str = tokens[1];
+
+    if (action == "joined") {
+        std::cout << "Player " << player_id_str << " joined the game" << std::endl;
+    } else if (action == "left") {
         try {
-            // Parse: "Bullet x y direction speed radius"
-            float x = std::stof(tokens[1]);
-            float y = std::stof(tokens[2]);
-            std::string direction = tokens[3];
-            float speed = std::stof(tokens[4]);
-            float radius = std::stof(tokens[5]);
-            
-            // clear existing bullets and replace with server state
-            // this ensures client bullets match server exactly
-            static bool first_bullet_update = true;
-            if (first_bullet_update) {
-                bullets.clear();
-                first_bullet_update = false;
+            int client_id = std::stoi(player_id_str);
+            {
+                std::lock_guard<std::mutex> lock(other_players_mutex);
+                other_players.erase(client_id);
             }
-            
-            // add bullet to local rendering (server is authoritative)
-            bullets.push_back({{x, y}, speed, direction});
-            
+            remove_enemy_for_player(client_id);
+            std::cout << "Player " << player_id_str << " left the game" << std::endl;
         } catch (const std::exception& e) {
-            std::cerr << "Error parsing bullet message: " << e.what() << std::endl;
-        }
-        return;
-    }
-    
-    // handle hit messages from server
-    if (tokens[0] == "Hit" && tokens.size() >= 3) {
-        try {
-            int shooter_id = std::stoi(tokens[1]);
-            int hit_player_id = std::stoi(tokens[2]);
-            
-            // if we're the shooter, increment our score
-            if (std::to_string(shooter_id) == player_id) {
-                player_score++;
-                scoreboard_fx_time = 10;
-                std::cout << "We hit player " << hit_player_id << "!" << std::endl;
-            }
-            // if we were hit, increment enemy score
-            else if (std::to_string(hit_player_id) == player_id) {
-                enemy_score++;
-                std::cout << "We were hit by player " << shooter_id << "!" << std::endl;
-            }
-            
-        } catch (const std::exception& e) {
-            std::cerr << "Error parsing hit message: " << e.what() << std::endl;
-        }
-        return;
-    }
-    // handle other player messages: "Client X: Position Y, Z"
-    if (tokens[0] == "Client" && tokens.size() >= 4) {
-        // extract client ID (remove the colon)
-        std::string client_id_str = tokens[1];
-        if (client_id_str.back() == ':') {
-            client_id_str.pop_back();
-        }
-        
-        try {
-            int client_id = std::stoi(client_id_str);
-            
-            // skip if this is our own message
-            if (std::to_string(client_id) == player_id) {
-                return;
-            }
-            
-            // parse position message: "Position X, Y"
-            if (tokens.size() >= 4 && tokens[2] == "Position") {
-                // tokens[3] should be "X," and tokens[4] should be "Y"
-                if (tokens.size() >= 5) {
-                    std::string x_str = tokens[3];
-                    std::string y_str = tokens[4];
-                    
-                    // remove comma from x coordinate
-                    if (x_str.back() == ',') {
-                        x_str.pop_back();
-                    }
-                    
-                    try {
-                        float x = std::stof(x_str);
-                        float y = std::stof(y_str);
-                        Vector2 position = {x, y};
-                        
-                        // update other player's position
-                        {
-                            std::lock_guard<std::mutex> lock(other_players_mutex);
-                            bool was_new_player = other_players.find(client_id) == other_players.end();
-                            other_players[client_id] = position;
-                            
-                            // If this is a new player, create an enemy for them
-                            if (was_new_player) {
-                                //create_enemy_for_player(client_id, position);
-                            }
-                        }
-                        
-                        // update enemy position
-                        update_enemy_position(client_id, position);
-                        
-                        //std::cout << "Updated player " << client_id << " position to (" << x << ", " << y << ")" << std::endl;
-                    } catch (const std::exception& e) {
-                        std::cerr << "Error parsing position coordinates: " << e.what() << std::endl;
-                    }
-                }
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "Error parsing client ID: " << e.what() << std::endl;
-        }
-    }
-    
-    // handle player join/leave messages
-    if (tokens[0] == "Player" && tokens.size() >= 3) {
-        if (tokens[2] == "joined") {
-            std::cout << "Player " << tokens[1] << " joined the game" << std::endl;
-            // Enemy will be created when we receive their first position update
-        } else if (tokens[2] == "left") {
-            try {
-                int client_id = std::stoi(tokens[1]);
-                {
-                    std::lock_guard<std::mutex> lock(other_players_mutex);
-                    other_players.erase(client_id);
-                }
-                remove_enemy_for_player(client_id);
-                std::cout << "Player " << tokens[1] << " left the game" << std::endl;
-            } catch (const std::exception& e) {
-                std::cerr << "Error parsing leaving player ID: " << e.what() << std::endl;
-            }
+            std::cerr << "Error parsing player leave event: " << e.what() << std::endl;
         }
     }
 }
 
+void parse_server_message(const std::string& message) {
+    std::vector<std::string> tokens = split_by_space(message);
+    if (tokens.empty()) return;
+
+    const std::string& type = tokens[0];
+
+    if (type == "Client_ID")         return handle_client_id(tokens);
+    else if (type == "Bullet")       return handle_bullet_update(tokens);
+    else if (type == "Hit")          return handle_hit(tokens);
+    else if (type == "Client")       return handle_client_position(tokens);
+    else if (type == "Player")       return handle_player_event(tokens);
+}
 int main() {
     boost::asio::io_context io_context;
     tcp::resolver resolver(io_context);

@@ -132,34 +132,19 @@ std::vector<std::string> split_by_space(const std::string& input) {
 }
 
 void update_bullet_position(Bullet& bullet, float dt) {
-    if (bullet.direction == "top_right") {
-        bullet.position.x += bullet.speed * dt;
-        bullet.position.y -= bullet.speed * dt;
-    }
-    else if (bullet.direction == "top_left") {
-        bullet.position.x -= bullet.speed * dt;
-        bullet.position.y -= bullet.speed * dt;
-    }
-    else if (bullet.direction == "bottom_right") {
-        bullet.position.x += bullet.speed * dt;
-        bullet.position.y += bullet.speed * dt;
-    }
-    else if (bullet.direction == "bottom_left") {
-        bullet.position.x -= bullet.speed * dt;
-        bullet.position.y += bullet.speed * dt;
-    }
-    else if (bullet.direction == "up") {
-        bullet.position.y -= bullet.speed * dt;
-    }
-    else if (bullet.direction == "down") {
-        bullet.position.y += bullet.speed * dt;
-    }
-    else if (bullet.direction == "left") {
-        bullet.position.x -= bullet.speed * dt;
-    }
-    else if (bullet.direction == "right") {
-        bullet.position.x += bullet.speed * dt;
-    }
+    Vector2 dir = {0, 0};
+
+    if (bullet.direction == "top_right")        dir = { 1, -1 };
+    else if (bullet.direction == "top_left")    dir = { -1, -1 };
+    else if (bullet.direction == "bottom_right")dir = { 1, 1 };
+    else if (bullet.direction == "bottom_left") dir = { -1, 1 };
+    else if (bullet.direction == "up")          dir = { 0, -1 };
+    else if (bullet.direction == "down")        dir = { 0, 1 };
+    else if (bullet.direction == "left")        dir = { -1, 0 };
+    else if (bullet.direction == "right")       dir = { 1, 0 };
+
+    bullet.position.x += dir.x * bullet.speed * dt;
+    bullet.position.y += dir.y * bullet.speed * dt;
 }
 
 void process_collisions() {
