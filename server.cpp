@@ -333,8 +333,10 @@ void session(std::shared_ptr<tcp::socket> socket, int client_id) {
             std::string line;
             std::getline(is, line);
             
-            // log received data
-            std::cout << "Client " << client_id << ": " << line << std::endl;
+            // log received data (unless it is position data)
+            if (line.find("Position") == std::string::npos) {
+                std::cout << "Client " << client_id << ": " << line << std::endl;
+            }
             
             // handle the message
             handle_client_message(line, client_id);

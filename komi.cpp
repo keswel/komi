@@ -21,6 +21,7 @@ std::mutex enemies_mutex;
 int player_score = 0;
 int enemy_score = 0;
 int scoreboard_fx_time = 0;
+int shoot_fx_time = 0;
 
 struct Bullet {
     Vector2 position;
@@ -244,7 +245,6 @@ int main() {
                     std::istream is(&buf);
                     std::string line;
                     std::getline(is, line);
-                    //std::cout << "Server says: " << line << std::endl;
                     parse_server_message(line);
                 }
             } catch (std::exception& e) {
