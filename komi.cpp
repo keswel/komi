@@ -215,7 +215,7 @@ void parse_server_message(const std::string& message) {
                             
                             // If this is a new player, create an enemy for them
                             if (was_new_player) {
-                                create_enemy_for_player(client_id, position);
+                                //create_enemy_for_player(client_id, position);
                             }
                         }
                         
