@@ -23,8 +23,8 @@ int enemy_score = 0;
 int scoreboard_fx_time = 0;
 int shoot_fx_time = 0;
 
-const int screenWidth  = 800;
-const int screenHeight = 450;
+const int screenWidth  = 1280;
+const int screenHeight = 720;
 
 struct Bullet {
     Vector2 position;
