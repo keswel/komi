@@ -271,7 +271,7 @@ void draw_weapons_selection() {
     }
 
     //int fontSize = 20;
-    int padding = 10;
+    int padding = 14;
 
     int lines = 2;
 
@@ -322,7 +322,19 @@ void draw_scoreboard() {
     }
       DrawText(scoreboard_text, rectX + 20, rectY + 10, 20, RAYWHITE);
 }
+float get_mouse_angle(float circleX, float circleY, Vector2 mousePos) {
+  float x = mousePos.x - circleX; 
+  float y = mousePos.y - circleY; 
+  
+  float angleDegrees = atan2(-y, x) * (180 / M_PI);
+  if (angleDegrees <= 0) {
+    angleDegrees += 360.0;
+  }
+  
 
+  std::cout << "Angle: " << angleDegrees << std::endl;
+  return angleDegrees;
+}
 int main() {
     boost::asio::io_context io_context;
     tcp::resolver resolver(io_context);
@@ -539,7 +551,12 @@ int main() {
                 DrawCircleV(e.position, Enemy::RADIUS, ORANGE);
             }
         }
-
+        Vector2 mousePos = GetMousePosition();
+        DrawLineV((Vector2){circleX, circleY}, mousePos, BLACK); 
+        get_mouse_angle(circleX, circleY, mousePos);
+        // mouse_pos = x1, y2
+        // circle_x, circle_y = x1, y1
+        
         EndDrawing();
     }
     
