@@ -322,6 +322,8 @@ void draw_scoreboard() {
     }
       DrawText(scoreboard_text, rectX + 20, rectY + 10, 20, RAYWHITE);
 }
+
+
 float get_mouse_angle(float circleX, float circleY, Vector2 mousePos) {
   float x = mousePos.x - circleX; 
   float y = mousePos.y - circleY; 
@@ -330,8 +332,8 @@ float get_mouse_angle(float circleX, float circleY, Vector2 mousePos) {
   if (angleDegrees <= 0) {
     angleDegrees += 360.0;
   }
+  float slope = y/x; // rise / run
   
-
   std::cout << "Angle: " << angleDegrees << std::endl;
   return angleDegrees;
 }
@@ -552,7 +554,7 @@ int main() {
             }
         }
         Vector2 mousePos = GetMousePosition();
-        DrawLineV((Vector2){circleX, circleY}, mousePos, BLACK); 
+        //DrawLineV((Vector2){circleX, circleY}, mousePos, BLACK); 
         get_mouse_angle(circleX, circleY, mousePos);
         // mouse_pos = x1, y2
         // circle_x, circle_y = x1, y1
