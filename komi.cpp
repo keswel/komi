@@ -8,6 +8,13 @@
 #include <unordered_map>
 #include <mutex>
 
+enum class GameState {
+    Ongoing,
+    Win,
+    Lose
+};
+GameState game_state = GameState::Ongoing;
+
 using boost::asio::ip::tcp;
 tcp::socket* global_socket = nullptr;
 std::string player_id;
@@ -22,6 +29,8 @@ int player_score = 0;
 int enemy_score = 0;
 int scoreboard_fx_time = 0;
 int shoot_fx_time = 0;
+
+bool waiting_for_restart = false;
 
 std::string selected_weapon = "pistol";
 std::string direction = "up";
@@ -245,6 +254,59 @@ void handle_player_event(const std::vector<std::string>& tokens) {
         }
     }
 }
+void handle_score_update(const std::vector<std::string>& tokens) {
+    if (tokens.size() < 3) return;
+
+    try {
+        int player_id_num = std::stoi(tokens[1]);
+        int score = std::stoi(tokens[2]);
+
+        if (std::to_string(player_id_num) == player_id) {
+            player_score = score;
+            scoreboard_fx_time = 10;
+        } else {
+            enemy_score = score;
+        }
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error parsing score message: " << e.what() << std::endl;
+    }
+}
+
+void handle_win(const std::vector<std::string>& tokens) {
+    if (tokens.size() < 2) return;
+
+    try {
+        int winner_id = std::stoi(tokens[1]);
+        
+        if (std::to_string(winner_id) == player_id) {
+            std::cout << "WE WON THE GAME!" << std::endl;
+            game_state = GameState::Win;
+        } else {
+            std::cout << "Player " << winner_id << " won the game!" << std::endl;
+            game_state = GameState::Lose;
+        }
+        
+        waiting_for_restart = false;
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error parsing win message: " << e.what() << std::endl;
+    }
+}
+
+void handle_game_restart(const std::vector<std::string>& tokens) {
+    // reset everything for new game
+    player_score = 0;
+    enemy_score = 0;
+    bullets.clear();
+    enemies.clear();
+    game_state = GameState::Ongoing;
+    waiting_for_restart = false;
+    scoreboard_fx_time = 0;
+    
+    std::cout << "Game restarted! All players were ready." << std::endl;
+}
+
 void parse_server_message(const std::string& message) {
     std::vector<std::string> tokens = split_by_space(message);
     if (tokens.empty()) return;
@@ -255,6 +317,9 @@ void parse_server_message(const std::string& message) {
     else if (type == "BulletsStart") return handle_bullets_start();  
     else if (type == "Bullet")       return handle_bullet_update(tokens);
     else if (type == "Hit")          return handle_hit(tokens);
+    else if (type == "Score")        return handle_score_update(tokens);
+    else if (type == "Win")          return handle_win(tokens);
+    else if (type == "GameRestart")  return handle_game_restart(tokens);
     else if (type == "Client")       return handle_client_position(tokens);
     else if (type == "Player")       return handle_player_event(tokens);
 }
@@ -337,7 +402,9 @@ float get_mouse_angle(float circleX, float circleY, Vector2 mousePos) {
   std::cout << "Angle: " << angleDegrees << std::endl;
   return angleDegrees;
 }
+
 int main() {
+
     boost::asio::io_context io_context;
     tcp::resolver resolver(io_context);
     auto endpoints = resolver.resolve("192.168.1.79", "8080");
@@ -370,198 +437,191 @@ int main() {
 
     InitWindow(screenWidth, screenHeight, "komi");
     SetTargetFPS(240);
-  
+
     float circleX = screenWidth  / 2.0f;
     float circleY = screenHeight / 2.0f;
     const float playerRadius = 15.0f;
     const float playerSpeed  = 400.0f;
 
+    const int WINNING_SCORE = 10;
 
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
 
-        float dx = 0, dy = 0;
-
-        if (IsKeyDown(KEY_W) && circleY - playerRadius > 0) dy = -1;
-        if (IsKeyDown(KEY_S) && circleY + playerRadius < screenHeight) dy =  1;
-        if (IsKeyDown(KEY_A) && circleX - playerRadius > 0) dx = -1;
-        if (IsKeyDown(KEY_D) && circleX + playerRadius < screenWidth) dx =  1;
-
-        // update facing direction
-        if (IsKeyDown(KEY_W) && IsKeyDown(KEY_D)) {
-            direction = "top_right";
-        }
-        else if (IsKeyDown(KEY_W) && IsKeyDown(KEY_A)) {
-            direction = "top_left";
-        }
-        else if (IsKeyDown(KEY_S) && IsKeyDown(KEY_D)) {
-            direction = "bottom_right";
-        }
-        else if (IsKeyDown(KEY_S) && IsKeyDown(KEY_A)) {
-            direction = "bottom_left";
-        }
-        else if (IsKeyDown(KEY_W)) {
-            direction = "up";
-            latest_right_direction = direction;
-        }
-        else if (IsKeyDown(KEY_S)) {
-            direction = "down";
-            latest_right_direction = direction;
-        }
-        else if (IsKeyDown(KEY_A)) {
-            direction = "left";
-            latest_right_direction = direction;
-        }
-        else if (IsKeyDown(KEY_D)) {
-            direction = "right";
-            latest_right_direction = direction;
-        }
-        
-        bool noKeysDown = 
-            !IsKeyDown(KEY_W) &&
-            !IsKeyDown(KEY_A) &&
-            !IsKeyDown(KEY_S) &&
-            !IsKeyDown(KEY_D) &&
-            !IsKeyDown(KEY_SPACE);  
-        if (noKeysDown) {
-          direction = latest_right_direction; 
+        // handle restart
+        if (game_state != GameState::Ongoing && IsKeyPressed(KEY_R)) {
+            player_score = 0;
+            enemy_score = 0;
+            bullets.clear();
+            enemies.clear();
+            game_state = GameState::Ongoing;
+            continue;
         }
 
-        // update player position
-        float len = std::sqrt(dx*dx + dy*dy);
-        if (len > 0.0f) { 
-          dx /= len;  
-          dy /= len; 
-        }
-        circleX += dx * playerSpeed * dt;
-        circleY += dy * playerSpeed * dt;
-        
-        // only send position if we have received our player ID
-        if (player_id_received) {
-            send_player_position(circleX, circleY);
-        }
-        
-        if (IsKeyPressed(KEY_ONE)) {
-          selected_weapon = "pistol";
+        // Check win/lose conditions
+        if (game_state == GameState::Ongoing) {
+            if (player_score >= WINNING_SCORE) game_state = GameState::Win;
+            if (enemy_score >= WINNING_SCORE) game_state = GameState::Lose;
         }
 
-        if (IsKeyPressed(KEY_TWO)) {
-          selected_weapon = "shotgun";
-        }
+        if (game_state == GameState::Ongoing) {
+            float dx = 0, dy = 0;
 
-        // shoot
-        if (IsKeyPressed(KEY_SPACE)) {
-            bullets.push_back({ {circleX, circleY}, 600.0f, direction });
-            Bullet bullet{ {circleX, circleY}, 600.0f, direction };
-            send_bullet_position(bullet);
-        }
-        
-        // spawn enemy (temporary - for testing)
-        if (IsKeyPressed(KEY_V)) {
-            enemies.push_back({ {circleX, circleY}, 10.0f, -1 }); // -1 for local test enemies
-        }
+            if (IsKeyDown(KEY_W) && circleY - playerRadius > 0) dy = -1;
+            if (IsKeyDown(KEY_S) && circleY + playerRadius < screenHeight) dy =  1;
+            if (IsKeyDown(KEY_A) && circleX - playerRadius > 0) dx = -1;
+            if (IsKeyDown(KEY_D) && circleX + playerRadius < screenWidth) dx =  1;
 
-        // update bullets 
-        for (auto& b : bullets) {
-            if (b.direction == "top_right") {
-                b.position.x += b.speed * dt;
-                b.position.y -= b.speed * dt;
+            // update facing direction
+            if (IsKeyDown(KEY_W) && IsKeyDown(KEY_D)) {
+                direction = "top_right";
             }
-            else if (b.direction == "top_left") {
-                b.position.x -= b.speed * dt;
-                b.position.y -= b.speed * dt;
+            else if (IsKeyDown(KEY_W) && IsKeyDown(KEY_A)) {
+                direction = "top_left";
             }
-            else if (b.direction == "bottom_right") {
-                b.position.x += b.speed * dt;
-                b.position.y += b.speed * dt;
+            else if (IsKeyDown(KEY_S) && IsKeyDown(KEY_D)) {
+                direction = "bottom_right";
             }
-            else if (b.direction == "bottom_left") {
-                b.position.x -= b.speed * dt;
-                b.position.y += b.speed * dt;
+            else if (IsKeyDown(KEY_S) && IsKeyDown(KEY_A)) {
+                direction = "bottom_left";
             }
-            else if (b.direction == "up") {
-                b.position.y -= b.speed * dt;
+            else if (IsKeyDown(KEY_W)) {
+                direction = "up";
+                latest_right_direction = direction;
             }
-            else if (b.direction == "down") {
-                b.position.y += b.speed * dt;
+            else if (IsKeyDown(KEY_S)) {
+                direction = "down";
+                latest_right_direction = direction;
             }
-            else if (b.direction == "left") {
-                b.position.x -= b.speed * dt;
+            else if (IsKeyDown(KEY_A)) {
+                direction = "left";
+                latest_right_direction = direction;
             }
-            else if (b.direction == "right") {
-                b.position.x += b.speed * dt;
+            else if (IsKeyDown(KEY_D)) {
+                direction = "right";
+                latest_right_direction = direction;
             }
-        }
 
-        // handle collisions with enemies
-        for (auto bIt = bullets.begin(); bIt != bullets.end(); ) {
-            bool removedBullet = false;
+            bool noKeysDown =
+                !IsKeyDown(KEY_W) &&
+                !IsKeyDown(KEY_A) &&
+                !IsKeyDown(KEY_S) &&
+                !IsKeyDown(KEY_D) &&
+                !IsKeyDown(KEY_SPACE);
+            if (noKeysDown) {
+                direction = latest_right_direction;
+            }
 
-            {
-                std::lock_guard<std::mutex> lock(enemies_mutex);
-                for (auto eIt = enemies.begin(); eIt != enemies.end(); ) {
-                    if (CheckCollisionCircles(bIt->position, Bullet::RADIUS,
-                                              eIt->position, Enemy::RADIUS)) {
+            // move player
+            float len = std::sqrt(dx*dx + dy*dy);
+            if (len > 0.0f) {
+                dx /= len;
+                dy /= len;
+            }
+            circleX += dx * playerSpeed * dt;
+            circleY += dy * playerSpeed * dt;
 
-                        std::cout << "Hit enemy (player " << eIt->client_id << ")!" << std::endl;
-                        eIt = enemies.erase(eIt);
-                        bIt = bullets.erase(bIt);
-                        removedBullet = true;
+            if (player_id_received) {
+                send_player_position(circleX, circleY);
+            }
 
-                        scoreboard_fx_time = 10;
-                        player_score++;
-                        send_to_server("Bullet has taken out enemy!\n");
-                        break;
-                    } else {
-                        ++eIt;
+            if (IsKeyPressed(KEY_ONE)) selected_weapon = "pistol";
+            if (IsKeyPressed(KEY_TWO)) selected_weapon = "shotgun";
+
+            if (IsKeyPressed(KEY_SPACE)) {
+                bullets.push_back({ {circleX, circleY}, 600.0f, direction });
+                Bullet bullet{ {circleX, circleY}, 600.0f, direction };
+                send_bullet_position(bullet);
+            }
+
+            if (IsKeyPressed(KEY_V)) {
+                enemies.push_back({ {circleX, circleY}, 10.0f, -1 });
+            }
+
+            // update bullets
+            for (auto& b : bullets) {
+                if (b.direction == "top_right")      { b.position.x += b.speed * dt; b.position.y -= b.speed * dt; }
+                else if (b.direction == "top_left")  { b.position.x -= b.speed * dt; b.position.y -= b.speed * dt; }
+                else if (b.direction == "bottom_right") { b.position.x += b.speed * dt; b.position.y += b.speed * dt; }
+                else if (b.direction == "bottom_left")  { b.position.x -= b.speed * dt; b.position.y += b.speed * dt; }
+                else if (b.direction == "up")        b.position.y -= b.speed * dt;
+                else if (b.direction == "down")      b.position.y += b.speed * dt;
+                else if (b.direction == "left")      b.position.x -= b.speed * dt;
+                else if (b.direction == "right")     b.position.x += b.speed * dt;
+            }
+
+            // bullet collisions
+            for (auto bIt = bullets.begin(); bIt != bullets.end(); ) {
+                bool removedBullet = false;
+
+                {
+                    std::lock_guard<std::mutex> lock(enemies_mutex);
+                    for (auto eIt = enemies.begin(); eIt != enemies.end(); ) {
+                        if (CheckCollisionCircles(bIt->position, Bullet::RADIUS,
+                                                  eIt->position, Enemy::RADIUS)) {
+                            std::cout << "Hit enemy (player " << eIt->client_id << ")!" << std::endl;
+                            eIt = enemies.erase(eIt);
+                            bIt = bullets.erase(bIt);
+                            removedBullet = true;
+
+                            scoreboard_fx_time = 10;
+                            player_score++;
+                            send_to_server("Bullet has taken out enemy!\n");
+                            break;
+                        } else {
+                            ++eIt;
+                        }
                     }
                 }
+
+                if (!removedBullet) ++bIt;
             }
 
-            if (!removedBullet) ++bIt;
+            bullets.erase(std::remove_if(bullets.begin(), bullets.end(),
+                [&](const Bullet& b){
+                    return b.position.x < 0 || b.position.x > screenWidth ||
+                           b.position.y < 0 || b.position.y > screenHeight;
+                }), bullets.end());
         }
 
-        // delete off‑screen bullets 
-        bullets.erase(std::remove_if(bullets.begin(), bullets.end(),
-            [&](const Bullet& b){
-                return b.position.x < 0 || b.position.x > screenWidth ||
-                       b.position.y < 0 || b.position.y > screenHeight;
-            }), bullets.end());
-
+        // DRAWING
         BeginDrawing();
-        ClearBackground(DARKGRAY);
+        ClearBackground(BLACK);
 
         draw_scoreboard();
         draw_weapons_selection();
 
-        // draw current player (white circle)
-        DrawCircleV({circleX, circleY}, playerRadius, WHITE);
+        if (game_state == GameState::Win) {
+            DrawText("YOU WIN!", screenWidth/2 - MeasureText("YOU WIN!", 60)/2, screenHeight/2 - 30, 60, GREEN);
+            DrawText("Press [R] to restart", screenWidth/2 - MeasureText("Press [R] to restart", 20)/2, screenHeight/2 + 40, 20, GRAY);
+        } else if (game_state == GameState::Lose) {
+            DrawText("YOU LOSE!", screenWidth/2 - MeasureText("YOU LOSE!", 60)/2, screenHeight/2 - 30, 60, RED);
+            DrawText("Press [R] to restart", screenWidth/2 - MeasureText("Press [R] to restart", 20)/2, screenHeight/2 + 40, 20, GRAY);
+        } else {
+            DrawCircleV({circleX, circleY}, playerRadius, WHITE);
 
-        // draw other players (red circles)
-        {
-            std::lock_guard<std::mutex> lock(other_players_mutex);
-            for (const auto& player : other_players) {
-                DrawCircleV(player.second, playerRadius, RED);
+            {
+                std::lock_guard<std::mutex> lock(other_players_mutex);
+                for (const auto& player : other_players) {
+                    DrawCircleV(player.second, playerRadius, RED);
+                }
             }
+
+            for (const auto& b : bullets) DrawCircleV(b.position, Bullet::RADIUS, PINK);
+            {
+                std::lock_guard<std::mutex> lock(enemies_mutex);
+                for (const auto& e : enemies) {
+                    DrawCircleV(e.position, Enemy::RADIUS, ORANGE);
+                }
+            }
+
+            Vector2 mousePos = GetMousePosition();
+            get_mouse_angle(circleX, circleY, mousePos);
         }
 
-        // draw bullets and enemies
-        for (const auto& b : bullets) DrawCircleV(b.position, Bullet::RADIUS, PINK);
-        {
-            std::lock_guard<std::mutex> lock(enemies_mutex);
-            for (const auto& e : enemies) {
-                DrawCircleV(e.position, Enemy::RADIUS, ORANGE);
-            }
-        }
-        Vector2 mousePos = GetMousePosition();
-        //DrawLineV((Vector2){circleX, circleY}, mousePos, BLACK); 
-        get_mouse_angle(circleX, circleY, mousePos);
-        // mouse_pos = x1, y2
-        // circle_x, circle_y = x1, y1
-        
         EndDrawing();
     }
-    
+
     CloseWindow();
     return 0;
 }

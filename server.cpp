@@ -5,17 +5,22 @@
 #include <mutex>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <sstream>
 #include <cmath>
 #include <algorithm>
 
 using boost::asio::ip::tcp;
 
+enum class GameState {
+    Playing,
+    GameOver,
+    WaitingForRestart
+};
 struct Vector2 {
     float x, y;
     Vector2(float x = 0, float y = 0) : x(x), y(y) {}
 };
-
 struct Player {
     int client_id;
     Vector2 position;
@@ -52,11 +57,16 @@ std::vector<Bullet> bullets;
 std::mutex clients_mutex;
 std::mutex game_state_mutex;
 
+GameState current_game_state = GameState::Playing;
+std::unordered_set<int> players_ready_to_restart;
+std::mutex game_state_mutex_extra;
+
 // game constants
 const int SCREEN_WIDTH = 1280;
 const int SCREEN_HEIGHT = 720;
 const float TICK_RATE = 60.0f; // server tick rate
 const float BULLET_LIFETIME = 5.0f; // seconds
+const int MAX_SCORE = 10;
 
 bool check_collision_circles(Vector2 pos1, float radius1, Vector2 pos2, float radius2) {
     float dx = pos1.x - pos2.x;
@@ -150,10 +160,15 @@ void update_bullet_position(Bullet& bullet, float dt) {
 void process_collisions() {
     std::lock_guard<std::mutex> lock(game_state_mutex);
     
+    // don't process collisions if game is over
+    if (current_game_state != GameState::Playing) {
+        return;
+    }
+    
     for (auto bullet_it = bullets.begin(); bullet_it != bullets.end();) {
         bool bullet_removed = false;
         
-        // Check collision with all players except the bullet owner
+        // check collision with all players except the bullet owner
         for (auto& [player_id, player] : players) {
             if (player_id != bullet_it->owner_id) {
                 if (check_collision_circles(bullet_it->position, Bullet::RADIUS,
@@ -163,6 +178,21 @@ void process_collisions() {
                     auto owner_it = players.find(bullet_it->owner_id);
                     if (owner_it != players.end()) {
                         owner_it->second.score++;
+
+                        // broadcast updated score
+                        std::string score_msg = "Score " + std::to_string(owner_it->first) + " " + std::to_string(owner_it->second.score) + "\n";
+                        broadcast_to_all(score_msg);
+
+                        // check win condition
+                        if (owner_it->second.score >= MAX_SCORE) {
+                            std::string win_msg = "Win " + std::to_string(owner_it->first) + "\n";
+                            broadcast_to_all(win_msg);
+                            std::cout << "Player " << owner_it->first << " wins!" << std::endl;
+
+                            // change game state to game over
+                            current_game_state = GameState::GameOver;
+                            players_ready_to_restart.clear();
+                        }
                     }
                     
                     // broadcast hit message
